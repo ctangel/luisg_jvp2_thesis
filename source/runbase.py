@@ -71,8 +71,8 @@ def find_device(device):
         If found, returns true, else false."""
     ports = serial.tools.list_ports.comports()
     for port in ports:
-        if port.vid == int(device.vid, 16) and port.pid == int(device.pid, 16):
-            device.port = port.device
+        if port.vid == int(device['vid'], 16) and port.pid == int(device['pid'], 16):
+            device['port'] = port.device
             return True
     return False
 
@@ -89,11 +89,11 @@ def startGPS(device):
     try:
         os.system("systemctl stop gpsd.socket")
         os.system("systemctl disable gpsd.socket")
-        os.system("gpsd %s -F /var/run/gpds.sock" % (device.port))
+        os.system("gpsd %s -F /var/run/gpds.sock" % (device['port']))
         time.sleep(5)
 
-        device.session = gps.gps("localhost", "2947")
-        device.session.stream(gps.WATCH_ENABLE | gps.WATCH_NEWSYTLE)
+        device['session'] = gps.gps("localhost", "2947")
+        device['session'].stream(gps.WATCH_ENABLE | gps.WATCH_NEWSYTLE)
         return True
     except:
         return False
@@ -175,7 +175,7 @@ def get_state_from_enc_pub():
 def get_coordinates():
     data = {'lat': None, 'lng': None}
     if session != None:
-        report = GPS.session.next()
+        report = GPS['session'].next()
         if report.get('class') == 'TPV':
             if hasattr(report, 'lat') and hasattr(report, 'lon'):
                 data['lat'] = report.lat
