@@ -23,55 +23,50 @@ import sys
 characterMin = 2
 N_attempts = 3
 readTimeout = 3 #in seconds
-portFound = False
 
 # Xbee Variables
-xbee_baud = 9600
-xbee_connectionString = ""
-CONST_xbeeVID = "0403" #The Vendor ID of the Zigbee Xbee Pro S1 model
-CONST_xbeePID = "6015" #The Product ID of the Zigbee Xbee Pro S1 model
-CONST_xbeeHWID = CONST_xbeeVID + ":" + CONST_xbeePID
+xbee = {
+    "baud": 9600,
+    "VID": "0403", # The Vendor ID of Zigbee Xbee Pro S1 model
+    "PID": "6015", # The Product ID of Zigbee Xbee Pro S1 model
+    "port": None
+}
 
 # Pixhawk Variables
-pixhawk_baud = 115200
-pixhawk_connectionString = ""
-CONST_pixhawkVID = "26ac" #The Vendor ID of the Pixhawk Flight Controller
-CONST_pixhawkPID = "0011" #The Product ID of the Pixhawk Flight Controller
-CONST_pixhawkHWID = CONST_pixhawkVID + ":" + CONST_pixhawkPID
+pixhawk = {
+    "baud": 115200,
+    "VID": "26ac", # The Vendor ID of the Pixhawk Flight Controller
+    "PID": "0011", # The Product ID of the Pixhawk Flight Contorller
+    "port": None
+}
+
+# Helper Functions
+def find_device(device):
+    """ Function searched system's open ports for the provided device. 
+        If found it returns true else, it returns false """
+    ports = serial.tools.list_ports.comports()
+    for port in ports:
+        if port.vid == int(device.VID, 16) and port.pid == int(device.PID, 16):
+            device.port = port.device
+            return True
+    return False
 
 # --- ESTABLISH CONNECTION ---
-portFound = False
-ports = list(serial.tools.list_ports.comports()) #get list of all open comports
 
 # Search for Pixhawk
 print(">>> Connecting to UAV... <<<")
-for p in ports:
-    lst = p[2].split("VID:PID=")[1].split(" ")
-    #First element is the VID:PID, second element is the SNR as 'SNR=...'
-
-    if CONST_pixhawkHWID in lst[0]:
-        pixhawk_connectionString = p[0]
-        vehicle = connect(pixhawk_connectionString, baud=pixhawk_baud, wait_ready=True)
-        portFound = True
-        break
-if portFound == False:
-    print "Pixhawk not found. Exiting test"
+if find_device(pixhawk):
+    vehicle = connect(pixhawk.port, baud=pixhawk.baud, wait_ready=True)
+else:
+    print "Pixhawk not found... Exiting test"
     exit()
 
+# Search for Xbee
 print(">>> Establishing Xbee serial port <<<")
-portFound = False
-for p in ports:
-    lst = p[2].split("VID:PID=")[1].split(" ")
-    #First element is the VID:PID, second element is the SNR as 'SNR=...'
-
-    if CONST_xbeeHWID in lst[0]:
-        xbee_connectionString = p[0]
-        xbee_ser = serial.Serial(xbee_connectionString, baud_rate=xbee_baud, timeout=readTimeout)
-        portFound = True
-        break
-
-if portFound == False:
-    print "Xbee not found. Exiting test"
+if find_device(xbee):
+    xbee_ser = serial.Serial(xbee.port, baud_rate=xbee.baud, timeout=readTimeout)
+else:
+    print "Xbee not found... Existing test"
     vehicle.close()
     exit()
 
