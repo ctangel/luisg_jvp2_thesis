@@ -46,8 +46,8 @@ def find_device(device):
         If found it returns true else, it returns false """
     ports = serial.tools.list_ports.comports()
     for port in ports:
-        if port.vid == int(device.VID, 16) and port.pid == int(device.PID, 16):
-            device.port = port.device
+        if port.vid == int(device['VID'], 16) and port.pid == int(device['PID'], 16):
+            device['port'] = port.device
             return True
     return False
 
@@ -56,7 +56,7 @@ def find_device(device):
 # Search for Pixhawk
 print(">>> Connecting to UAV... <<<")
 if find_device(pixhawk):
-    vehicle = connect(pixhawk.port, baud=pixhawk.baud, wait_ready=True)
+    vehicle = connect(pixhawk['port'], baud=pixhawk['baud'], wait_ready=True)
 else:
     print "Pixhawk not found... Exiting test"
     exit()
@@ -64,7 +64,7 @@ else:
 # Search for Xbee
 print(">>> Establishing Xbee serial port <<<")
 if find_device(xbee):
-    xbee_ser = serial.Serial(xbee.port, baud_rate=xbee.baud, timeout=readTimeout)
+    xbee_ser = serial.Serial(xbee['port'], baud_rate=xbee['baud'], timeout=readTimeout)
 else:
     print "Xbee not found... Existing test"
     vehicle.close()
