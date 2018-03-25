@@ -13,6 +13,7 @@ import os
 import random
 import json
 import time
+import gps
 
 # CODES
 IDLE            = 'a'
@@ -35,6 +36,7 @@ RELEASE         = 'o'
 SEND            = 'p'
 MOVE            = 'q'
 
+# Global Variables
 enc_file_name   = 'enc.pub'
 dec_file_name   = 'dec.pub'
 digest          = None
@@ -48,7 +50,14 @@ flight_plan     = ["jvp2@princeton.edu"]
 msgs            = {}
 debug           = False
 run             = True
-session         = None
+
+# GPS Device Information
+GPS = {
+    "vid": "067B",
+    "pid": "2303",
+    "port": None,
+    "session": None
+}
 
 #TODO Read ID from id.pub
 #TODO Confirm that glob_id is not None
@@ -57,22 +66,37 @@ glob_id         = None
 with open("global.pub") as fn:
     glob_id = fn.read()
 
+def find_device(device):
+    """ Searches system's open ports for the provided device.
+        If found, returns true, else false."""
+    ports = serial.tools.list_ports.comports()
+    for port in ports:
+        if port.vid == int(device.vid, 16) and port.pid == int(device.pid, 16):
+            device.port = port.device
+            return True
+    return False
+
 def db(STATE):
     global run
     if debug:
         print STATE
         run = False
 
-def startGPS():
-    #TODO check that USB0 contains the GPS
-    # Setup GPS Serial Port Connection
-    os.system("systemctl stop gpsd.socket")
-    os.system("systemctl disable gpsd.socket")
-    os.system("gpsd /dev/ttyUSB0 -F /var/run/gpds.sock")
-    time.sleep(5)
+def startGPS(device):
+    """ Sets up and establishes a connection with the provided gps device.
+        If connection is successful, it returns true, else false"""
+    # Try to Setup GPS Serial Port Connection
+    try:
+        os.system("systemctl stop gpsd.socket")
+        os.system("systemctl disable gpsd.socket")
+        os.system("gpsd %s -F /var/run/gpds.sock" % (device.port))
+        time.sleep(5)
 
-    session = gps.gps("localhost", "2947")
-    session.stream(gps.WATCH_ENABLE | gps.WATCH_NEWSYTLE)
+        device.session = gps.gps("localhost", "2947")
+        device.session.stream(gps.WATCH_ENABLE | gps.WATCH_NEWSYTLE)
+        return True
+    except:
+        return False
 
 def broadcast_enc_pub():
     #TODO
@@ -151,7 +175,7 @@ def get_state_from_enc_pub():
 def get_coordinates():
     data = {'lat': None, 'lng': None}
     if session != None:
-        report = session.next()
+        report = GPS.session.next()
         if report.get('class') == 'TPV':
             if hasattr(report, 'lat') and hasattr(report, 'lon'):
                 data['lat'] = report.lat
@@ -206,14 +230,21 @@ def send_propogate(data):
         os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), q[0]))
     db(PROPOGATE)
     broadcast_enc_pub()
- 
+
+# Find Devices
+if find_device(GPS):
+    if not startGPS(GPS):
+        print "GPS Connected Failed"
+        exit()
+else:
+    print "GPS not found"
+    exit()
+
 while run:
     data = get_state_from_enc_pub()
     code = data.get('code')
     debug = data.get('debug', False)
-    
-    startGPS()
-
+   
     # set timer to fire send_ping()
     if code == IDLE:
         idle()
@@ -238,4 +269,4 @@ while run:
     elif code == PROPOGATE:
         send_propogate(data)
     else:
-        print 'Code Not Found: throw an exception'
+        print 'Code Not Found'
