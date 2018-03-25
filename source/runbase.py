@@ -12,6 +12,7 @@ import hashlib
 import os
 import random
 import json
+import time
 
 # CODES
 IDLE            = 'a'
@@ -47,6 +48,7 @@ flight_plan     = ["jvp2@princeton.edu"]
 msgs            = {}
 debug           = False
 run             = True
+session         = None
 
 #TODO Read ID from id.pub
 #TODO Confirm that glob_id is not None
@@ -60,6 +62,18 @@ def db(STATE):
     if debug:
         print STATE
         run = False
+
+def startGPS():
+    #TODO check that USB0 contains the GPS
+    # Setup GPS Serial Port Connection
+    os.system("systemctl stop gpsd.socket")
+    os.system("systemctl disable gpsd.socket")
+    os.system("gpsd /dev/ttyUSB0 -F /var/run/gpds.sock")
+    time.sleep(5)
+
+    session = gps.gps("localhost", "2947")
+    session.stream(gps.WATCH_ENABLE | gps.WATCH_NEWSYTLE)
+
 def broadcast_enc_pub():
     #TODO
     pass
@@ -133,13 +147,16 @@ def get_state_from_enc_pub():
                 with open(dec_file_name) as ff:
                     data = json.load(ff)
     return data
-def get_lat():
-    #TODO
-    return None
 
-def get_lng():
-    #TODO
-    return None
+def get_coordinates():
+    data = {'lat': None, 'lng': None}
+    if session != None:
+        report = session.next()
+        if report.get('class') == 'TPV':
+            if hasattr(report, 'lat') and hasattr(report, 'lon'):
+                data['lat'] = report.lat
+                data['lng'] = report.lon
+    return data
 
 def send_ping():
     m = {'code': REPLY_PING, 'id': email}
@@ -148,7 +165,8 @@ def send_ping():
     broadcast_enc_pub()
 
 def send_reply_ping():
-    m = {'code': UPDATE, 'id': email, "lat": get_lat(), "lng": get_lng()}
+    coor = get_coordinates()
+    m = {'code': UPDATE, 'id': email, "lat": coor.get('lat'), "lng": coor.get('lng')}
     os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), glob_id))
     db(REPLY_PING)
     broadcast_enc_pub()
@@ -172,9 +190,9 @@ def send_propogate(data):
     for key in mapa.keys():
         if key not in q and key not in t and data.get(key) == None:
             q.append(key)
-    
+    coor = get_coordinates() 
     if d.get(email) == None:
-        d[email] = {"lat": get_lat(), "lng": get_lng()} 
+        d[email] = {"lat": coor.get('lat'), "lng": coor.get('lng')} 
 
     m = {'code': PROPOGATE, 'id': email, "data":d, "q": q}
     if mapa.get(q[0]) == None:
@@ -193,6 +211,8 @@ while run:
     data = get_state_from_enc_pub()
     code = data.get('code')
     debug = data.get('debug', False)
+    
+    startGPS()
 
     # set timer to fire send_ping()
     if code == IDLE:

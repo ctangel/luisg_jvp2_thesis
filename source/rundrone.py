@@ -50,7 +50,9 @@ debug           = False
 # with open("id.pub", "r") as f:
 #    ID = f.read()
 
-
+#TODO Create space to add GPS Code
+# Drone has its own GPS so we will have to give it a specialized code
+# The rest will be using the GPS Ultimate module
 def db(STATE):
     global run
     if debug:
