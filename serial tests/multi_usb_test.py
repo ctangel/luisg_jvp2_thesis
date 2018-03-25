@@ -1,7 +1,10 @@
 """
 mutli_usb_test.py
 Author: James Poindexter
-Date Last Modified: Friday March 23, 2018
+Modified by: Luis Gonzalez-Yante
+
+Date Created: Friday March 23, 2018
+Date Last Modified: Sunday March 25, 2018
 
 Purpose: With the Pixhawk and an XBEE component plugged into the raspberry
 pi at the same time, attempt to pull data from the pixhawk and send the data
@@ -42,7 +45,7 @@ pixhawk = {
 
 # Helper Functions
 def find_device(device):
-    """ Function searched system's open ports for the provided device. 
+    """ Function searched system's open ports for the provided device.
         If found it returns true else, it returns false """
     ports = serial.tools.list_ports.comports()
     for port in ports:
