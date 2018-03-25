@@ -11,6 +11,7 @@
 import hashlib
 import os
 import random
+import string
 import json
 import time
 import gps
@@ -35,14 +36,13 @@ ASK_DIRECT      = 'n'
 RELEASE         = 'o'
 SEND            = 'p'
 MOVE            = 'q'
-
+ABORT           = 'r'
 # Global Variables
 enc_file_name   = 'enc.pub'
 dec_file_name   = 'dec.pub'
 digest          = None
-message         = ''
-email           = 'fnewaj@princeton.edu'
-glob_id         = ''
+dev_id          = None
+glob_id         = None
 data            = {'code': IDLE}
 mapa            = {}
 base            = {}
@@ -59,12 +59,24 @@ GPS = {
     "session": None
 }
 
-#TODO Read ID from id.pub
-#TODO Confirm that glob_id is not None
-glob_id         = None
+# Get ID Name
+try:
+    with open("id.pub") as fn:
+        dev_id = fn.read()
+except:
+    print "id.pub was not found"
+    exit()
 
-with open("global.pub") as fn:
-    glob_id = fn.read()
+# Get Global Id
+try:
+    with open("global.pub") as fn:
+        glob_id = fn.read()
+except:
+    print "global.pub was not found"
+    exit()
+
+print dev_id
+print glob_id
 
 def find_device(device):
     """ Searches system's open ports for the provided device.
@@ -113,10 +125,12 @@ def send_connection_confirmation(data):
     broadcast_enc_pub()
 
 def send_directions(data):
-    # Handle Situation when base provided is not in recognized by the base
     b = base.get(data.get('base'))
     if b == None:
-        #TODO handle case here
+        # Handle Situation when base provided is not in recognized by the base
+        m = {
+                'code': ABORT
+            }
         pass
     else :
         m = {
@@ -124,7 +138,7 @@ def send_directions(data):
                 'long': base.get(data.get('base')).get('long'),  
                 'lat' : base.get(data.get('base')).get('lat'),  
             }
-        os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')))
+    os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')))
     db(SEND_DIRECT)
     broadcast_enc_pub()
 
@@ -133,7 +147,8 @@ def send_release_msg(data):
             'code': SEND,
             'msg': 'asdef'
         }
-    #TODO randomly generate a msg
+    chars = string.ascii_uppercase + string.digits
+    m['msg'] = ''.join(random.choice(chars) for _ in range(12))
     msgs[data.get('id')] = m.get('msg')
     os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')))
     db(RELEASE_MSG)
@@ -158,7 +173,6 @@ def send_release_acceptance(data):
 
 
 def get_state_from_enc_pub():
-    # TODO Attempt to decrypt with glob_id
     global digest
     m = hashlib.md5()
     data = {"code": IDLE}
@@ -167,9 +181,20 @@ def get_state_from_enc_pub():
             m.update(f.read())
             if digest != m.digest():
                 digest = m.digest()
-                os.system("./decrypt < param/a3.param")
-                with open(dec_file_name) as ff:
-                    data = json.load(ff)
+                # Try dev_id
+                os.system("./decrypt %s < param/a3.param" %s (dev_id)) 
+                try:
+                    with open(dec_file_name) as ff:
+                        data = json.load(ff)
+                except: 
+                    # Try glob_id
+                    os.system("./decrypt %s < param/a3.param" %s (glob_id))
+                    try:
+                        with open(dec_file_name) as ff:
+                            data = json.load(ff)
+                    except:
+                        print "dev.pub failed to decrypt"
+                        exit() 
     return data
 
 def get_coordinates():
@@ -183,14 +208,14 @@ def get_coordinates():
     return data
 
 def send_ping():
-    m = {'code': REPLY_PING, 'id': email}
+    m = {'code': REPLY_PING, 'id': dev_id}
     os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), glob_id))
     db(PING)
     broadcast_enc_pub()
 
 def send_reply_ping():
     coor = get_coordinates()
-    m = {'code': UPDATE, 'id': email, "lat": coor.get('lat'), "lng": coor.get('lng')}
+    m = {'code': UPDATE, 'id': dev_id, "lat": coor.get('lat'), "lng": coor.get('lng')}
     os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), glob_id))
     db(REPLY_PING)
     broadcast_enc_pub()
@@ -200,7 +225,7 @@ def update_map(data):
     db(UPDATE)
 
 def send_global_ping():
-    m = {'code': PROPOGATE, 'id': email, "data":{}, "q": [], "t": [email]}
+    m = {'code': PROPOGATE, 'id': dev_id, "data":{}, "q": [], "t": [dev_id]}
     os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), glob_id))
     db(GLOBAL_PING)
     broadcast_enc_pub()
@@ -215,16 +240,16 @@ def send_propogate(data):
         if key not in q and key not in t and data.get(key) == None:
             q.append(key)
     coor = get_coordinates() 
-    if d.get(email) == None:
-        d[email] = {"lat": coor.get('lat'), "lng": coor.get('lng')} 
+    if d.get(dev_id) == None:
+        d[dev_id] = {"lat": coor.get('lat'), "lng": coor.get('lng')} 
 
-    m = {'code': PROPOGATE, 'id': email, "data":d, "q": q}
+    m = {'code': PROPOGATE, 'id': dev_id, "data":d, "q": q}
     if mapa.get(q[0]) == None:
         i = t.pop()
         m['t'] = t
         os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), i))
     else:
-        t.append(email)
+        t.append(dev_id)
         m['q'] = q[1:]
         m['t'] = t
         os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), q[0]))

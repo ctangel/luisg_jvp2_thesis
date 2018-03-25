@@ -20,6 +20,7 @@ ASK_DIRECT      = 'n'
 RELEASE         = 'o'
 SEND            = 'p'
 MOVE            = 'q'
+ABORT           = 'r'
 
 # Base Codes
 IDLE            = 'a'
@@ -104,6 +105,11 @@ def move_to_base(data):
     # drone moves to the base
     #TODO
 
+def abort(data):
+    #TODO figure how to about a mission (as in move back to home base)
+    db(ABORT)
+    pass
+
 def get_state_from_enc_pub():
     global digest
     m = hashlib.md5()
@@ -119,11 +125,10 @@ def get_state_from_enc_pub():
     return data
 
 while run:
-    #print "start"
     data  = get_state_from_enc_pub()
     code  = data.get('code')
     debug = data.get('debug', False)
-    #print "mid"
+    
     if code == CONFIRM:
         PREV_STATE = CONFIRM
         broadcast_to_base(ID, flight_plan[flight_stop])
@@ -144,5 +149,9 @@ while run:
         PREV_STATE = MOVE
         move_to_base(data)
         flight_stop += 1
+    elif code == ABORT:
+        PREV_STATE = ABORT
+        abort(data)
+        flight_stop -= 1
     else:
         print 'error: add code to throw an exception'
