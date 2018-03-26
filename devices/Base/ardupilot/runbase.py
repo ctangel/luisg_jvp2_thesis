@@ -15,7 +15,6 @@ import string
 import json
 import time
 import gps
-import serial.tools.list_ports
 
 # CODES
 IDLE            = 'a'
