@@ -111,7 +111,7 @@ def startGPS(device):
             report = device['session'].next()
             print report
         print "GPS Locked"
-        print True
+        return True
     except:
         print "Error occuring during setup"
         return False
