@@ -65,25 +65,40 @@
           <span class="text-primary">Devices</span>
         </h1>
         <form id="registerForm">
-           <div class="form-group">
+           <!--<div class="form-group">
             <label for="deviceVolume">Select Device Volume</label>
             <select name="deviceVolume" class="form-control" id="deviceVolume">
               {% for n in undeviceList %}
                 <option>{{n}}</option>
               {% endfor %}
             </select>
-          </div>
+          </div>-->
           <div class="form-group">
             <label for="deviceName">Enter Device Name </label>
             <input type="text" class="form-control" id="deviceName" name="deviceName" placeholder="Device Name">
           </div>
-          <div class="mb-5 form-group">
+          <div class="form-group">
             <label for="deviceType">Select Device Type</label>
             <select name="deviceType" class="form-control" id="deviceType">
               <option>Base</option>
               <option>Drone</option>
             </select>
           </div>
+          <div class="form-group">
+            <label for="deviceUser">Enter Device User</label>
+            <input type="text" class="form-control" id="deviceUser" name="deviceUser" placeholder="pi">
+          </div>
+          <div class="form-group">
+            <label for="deviceIP">Enter Device IP</label>
+            <input type="text" class="form-control" id="deviceIP" name="deviceIP" placeholder="10.0.1.128">
+          </div>
+          <div class="mb-5 form-group">
+            <label for="devicePass">Enter Device Password</label>
+            <input type="text" class="form-control" id="devicePass" name="devicePass" placeholder="*****">
+          </div>
+
+
+
 
           <button id="registerBtn" type="button" class="btn btn-primary">Submit</button>
         </form>

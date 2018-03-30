@@ -15,6 +15,7 @@ import string
 import json
 import time
 import gps
+import serial.tools.list_ports
 
 # CODES
 IDLE            = 'a'
@@ -74,9 +75,6 @@ try:
 except:
     print "global.pub was not found"
     exit()
-
-print dev_id
-print glob_id
 
 def find_device(device):
     """ Searches system's open ports for the provided device.
@@ -259,7 +257,8 @@ def send_propogate(data):
 # Find Devices
 if find_device(GPS):
     if not startGPS(GPS):
-        print "GPS Connected Failed"
+        print GPS
+        print "GPS Connection Failed"
         exit()
 else:
     print "GPS not found"

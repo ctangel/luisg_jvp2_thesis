@@ -9,9 +9,12 @@ def hello():
 @application.route("/register", methods=["POST"])
 def register():
   input_json = request.form
-  deviceVolume = input_json['deviceVolume']
+  #deviceVolume = input_json['deviceVolume']
   deviceName = input_json['deviceName']
   deviceType = input_json['deviceType']
+  deviceUser = input_json['deviceUser']
+  deviceIP = input_json['deviceIP']
+  devicePass = input_json['devicePass']
   devicePath = '../devices/' + deviceType    
 
   if deviceName in os.listdir("../devices/Drone"):
@@ -25,10 +28,15 @@ def register():
   os.system("cp ../system/*.pub %s/%s" % (devicePath, deviceName))
   os.system("cp ../system/param/a3.param %s/%s/param/a3.param" % (devicePath, deviceName))
   os.system("./../exec/extract %s  < ../system/param/a3.param" % deviceName)
+  #os.system("./../source/extract.c %s  < ../system/param/a3.param" % deviceName)
   os.system("mv ../www/*.pub %s/%s" % (devicePath, deviceName))
-  os.system("cp ../exec/ibc* %s/%s" % (devicePath, deviceName))
-  os.system("cp ../exec/encrypt %s/%s" % (devicePath, deviceName))
-  os.system("cp ../exec/decrypt %s/%s" % (devicePath, deviceName))
+  #os.system("cp ../exec/ibc* %s/%s" % (devicePath, deviceName))
+  os.system("cp ../source/ibc* %s/%s" % (devicePath, deviceName))
+  #os.system("cp ../exec/encrypt %s/%s" % (devicePath, deviceName))
+  os.system("cp ../source/encrypt.c %s/%s" % (devicePath, deviceName))
+  #os.system("cp ../exec/decrypt %s/%s" % (devicePath, deviceName))
+  os.system("cp ../source/decrypt.c %s/%s" % (devicePath, deviceName))
+  os.system("cp ../source/compile.py %s/%s" % (devicePath, deviceName))
   if deviceType == 'Base':
     os.system("cp ../source/runbase.py %s/%s" % (devicePath, deviceName))
     os.system("cp ../source/testbase.py %s/%s" % (devicePath, deviceName))
@@ -36,6 +44,10 @@ def register():
     os.system("cp ../source/rundrone.py %s/%s" % (devicePath, deviceName))
     os.system("cp ../source/testdrone.py %s/%s" % (devicePath, deviceName))
   #os.system("cp -r %s/%s /Volumes/'%s'" % (devicePath, deviceName, deviceVolume))
+  
+  # try to send code to pi via scp
+  # sshpass -p thesis123 scp -r ../devices/Base/{deviceName} pi%10.0.1.128:/home/pi
+  os.system("sshpass -p %s scp -r %s/%s/. %s@%s:/home/%s/run" % (devicePass, devicePath, deviceName, deviceUser, deviceIP, deviceUser))
 
   return '200'#
 
