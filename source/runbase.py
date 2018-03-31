@@ -93,52 +93,40 @@ def db(STATE):
         print STATE
         run = False
 
-def isDeviceConnected(device):
-    port = device['port'][2]
-    if sp.call("system is-active dev-%s.device" % port, shell=True) == 0:
-        return True
-    return False
-
-def isGPSSocketConnected(device):
-    if sp.call("killall gpsd", shell=True) == 0:
-        return True
-    return False
-
-
 def startGPS(device):
     """ Sets up and establishes a connection with the provided gps device.
         If connection is successful, it returns true, else false"""
+    # Checking if GPS is Connected to Socket
     try:
-        # Check that gpsd.socket is inactive and disabled if not do so
-        #print "Disabling original gpsd.socket"
-        #if sp.call("systemctl is-active gpsd.socket", shell=True) != 3:
-        #    os.system("systemctl stop gpsd.socket")
-        #if sp.call("systemctl is-enabled gpsd.socket", shell=True) != 1:
-        #    os.system("systemctl disable gpsd.socket") 
-        #if not isDeviceConnected(device):
-        os.system("killall gpsd")
-        os.system("gpsd %s" % (device['port']))
-        #else:
-        #    print "GPS is not Connected"
-        #    exit()
-        #os.system("gpsd %s -F /var/run/gpds.sock" % (device['port']))
-        time.sleep(5)
-        print "Save gps Session"
-        device['session'] = gps.gps("localhost", "2947")
-        while device['session'] == None:
-            device['session'] = gps.gps("localhost", "2947")
-        device['session'].stream(gps.WATCH_ENABLE | gps.WATCH_NEWSTYLE)
-        #time.sleep(10)
-        report = device['session'].next()
-        while report.get('mode') != 3:
-            time.sleep(1)
-            report = device['session'].next()
-            print report
-        print "GPS Locked"
-        return True
+        child = sp.Popen("pgrep -a gpsd", shell=True, stdin=sp.PIPE, stdout=sp.PIPE, stderr=sp.PIPE)
+        output, err = child.communicate()
+        if device['port'] not in output and output != '':
+            # Killing Existing GPS Socket Connection
+            os.system("sudo killall -q gpsd")
+        
+        if device['port'] not in output:
+            # Connecting GPS to Socket
+            os.system("gpsd %s" % (device['port']))
     except:
-        print "Error occuring during setup"
+        # GPS Failed to Connect to Socket
         return False
+
+    # Checking if gps session is valid
+    while True:
+        time.sleep(1)
+        try:
+            device['session'] = gps.gps("localhost", "2947")
+            break
+        except:
+            sp.check_call("sudo killall -q gpsd", shell=True)
+            os.system("gpsd %s" % (device['port'])) 
+    device['session'].stream(gps.WATCH_ENABLE | gps.WATCH_NEWSTYLE)
+    report = device['session'].next()
+    # Locking onto GPS
+    while report.get('mode') != 3:
+        time.sleep(1)
+        report = device['session'].next()
+    return True
 
 def broadcast_enc_pub():
     #TODO
