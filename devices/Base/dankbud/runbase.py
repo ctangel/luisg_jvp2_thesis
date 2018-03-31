@@ -110,23 +110,21 @@ def startGPS(device):
         If connection is successful, it returns true, else false"""
     try:
         # Check that gpsd.socket is inactive and disabled if not do so
-        #print "Disabling original gpsd.socket"
+        print "Disabling original gpsd.socket"
         #if sp.call("systemctl is-active gpsd.socket", shell=True) != 3:
         #    os.system("systemctl stop gpsd.socket")
         #if sp.call("systemctl is-enabled gpsd.socket", shell=True) != 1:
         #    os.system("systemctl disable gpsd.socket") 
-        #if not isDeviceConnected(device):
-        os.system("killall gpsd")
-        os.system("gpsd %s" % (device['port']))
-        #else:
-        #    print "GPS is not Connected"
-        #    exit()
+        if not isDeviceConnected(device):
+            sp.call("killall gpsd", shell=True)
+            os.system("gpsd %s" % (device['port']))
+        else:
+            print "GPS is not Connected"
+            exit()
         #os.system("gpsd %s -F /var/run/gpds.sock" % (device['port']))
-        time.sleep(5)
+        #time.sleep(10)
         print "Save gps Session"
         device['session'] = gps.gps("localhost", "2947")
-        while device['session'] == None:
-            device['session'] = gps.gps("localhost", "2947")
         device['session'].stream(gps.WATCH_ENABLE | gps.WATCH_NEWSTYLE)
         #time.sleep(10)
         report = device['session'].next()
