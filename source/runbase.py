@@ -41,11 +41,12 @@ SEND            = 'p'
 MOVE            = 'q'
 ABORT           = 'r'
 TAKE_OFF        = 's'
-CONFIRM_FP       = 't'
+CONFIRM_FP      = 't'
 
 # Global Variables
 enc_file_name   = 'enc.pub'
 dec_file_name   = 'dec.pub'
+db_file_name    = 'deb.pub'
 digest          = None
 dev_id          = None
 glob_id         = None
@@ -93,7 +94,8 @@ def find_device(device):
 def db(STATE):
     global run
     if debug:
-        print STATE
+        with open(db_file_name) as fn:
+            fn.write(STATE)
         run = False
 
 def startGPS(device):

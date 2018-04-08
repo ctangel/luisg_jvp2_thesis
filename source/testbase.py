@@ -18,6 +18,7 @@ REPLY_PING      = 'h'
 UPDATE          = 'i'
 GLOBAL_PING     = 'j'
 PROPOGATE       = 'k'
+START_TAKE_OFF  = 'u'
 
 # Drone Codes
 CONFIRM         = 'l'
@@ -26,13 +27,18 @@ ASK_DIRECT      = 'n'
 RELEASE         = 'o'
 SEND            = 'p'
 MOVE            = 'q'
+ABORT           = 'r'
+TAKE_OFF        = 's'
+CONFIRM_FP      = 't'
 
 # Global Variables
 dec_exe = ".."
 enc_exe = ".."
 dec_fn  = "dec.pub"
 enc_fn  = "enc.pub"
+deb_fn  = "deb.pub"
 dev_id  = None
+child   = None
 
 with open("id.pub") as fn:
     dev_id = fn.read()
@@ -46,17 +52,40 @@ def test_state(m):
     return child.communicate()[0]
 
 class TestIDLEState(unittest.TestCase):
+    @classmethod
+    def setupClass(cls):
+        global child
+        child = sp.Popen("python runbase.py", 
+                shell=True, 
+                stdout=sp.PIPE, 
+                stdin=sp.PIPE, 
+                stderr=sp.STDOUT)
+    @classmethod
+    def teardownClass(cls):
+        child.terminate()
+        child.kill()
+
+    def setupModule():
+        # Remove dec.pub and enc.pub
+        os.remove(dec_fn)
+        os.remove(enc_fn)
+        os.remove(deb_fn)
+
     def test_idle_start(self):
         m = {"code": IDLE, "debug": True}
-        stdout = test_state(m)
+        sp.call("./encrypt '%s' %s < param/a3.param" % (json.dumps(m), dev_id), shell=True)
+        with open(deb_fn) as fn:
+            stdout = fn.read()
+        print stdout
+        print IDLE
         self.assertTrue(IDLE == stdout.strip())
 
+"""
 class TestSENDCONFIRMState(unittest.TestCase):
     def test_send_confirm_start(self):
         m = {"code": SEND_CONFIRM, "id": dev_id, "debug": True}
         stdout = test_state(m)
         self.assertTrue(SEND_CONFIRM == stdout.strip())
-'''
     def test_send_confirm_reply(self):
         print "confirm reply"
         m = {"code": SEND_CONFIRM, "id": dev_id, "debug": True}
@@ -69,7 +98,6 @@ class TestSENDCONFIRMState(unittest.TestCase):
             print data
             print r
             self.assertTrue(r == data)
-'''
 
 class TestSENDDIRECTState(unittest.TestCase):
     def test_send_direct_start(self):
@@ -124,6 +152,6 @@ class TestPROPOGATEState(unittest.TestCase):
         m = {"code": PROPOGATE, "id": dev_id, "data":{}, "q":[dev_id], "t":[dev_id], "debug": True}
         stdout = test_state(m)
         self.assertTrue(PROPOGATE == stdout.strip())
-
+"""
 if __name__ == '__main__':
     unittest.main()
