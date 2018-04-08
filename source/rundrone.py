@@ -21,6 +21,8 @@ RELEASE         = 'o'
 SEND            = 'p'
 MOVE            = 'q'
 ABORT           = 'r'
+TAKE_OFF        = 's'
+CONFIRM_FP     = 't'
 
 # Base Codes
 IDLE            = 'a'
@@ -34,38 +36,95 @@ REPLY_PING      = 'h'
 UPDATE          = 'i'
 GLOBAL_PING     = 'j'
 PROPOGATE       = 'k'
+START_TAKE_OFF  = 'u'
 
 enc_file_name   = 'enc.pub'
 dec_file_name   = 'dec.pub'
 digest          = None
 message         = ' '
-ID              = 'fnewaj@princeton.edu'
 data            = {'code': CONFIRM}
-flight_plan     = ["jvp2@princeton.edu", "h"]
+flight_plan     = []
 flight_stop     = 0;
 PREV_STATE      = CONFIRM
 run             = True
 debug           = False
+dev_id          = None
+glob_id         = None
 
-# Read ID from id.pub and store in id var
-# with open("id.pub", "r") as f:
-#    ID = f.read()
+# Get ID Name
+try: 
+    with open("id.pub") as fn:
+        dev_id = fn.read()
+except:
+    exit("id.pub was not found")
 
-#TODO Create space to add GPS Code
+# Get Global ID
+try:
+    with open("global.pub") as fn:
+        glob_id = fn.read()
+except:
+    exit("global.pub was not found")
+
+def find_device(device):
+    """ Searches system's open ports for the provided device.
+        If found, returns true, else false """
+    ports = serial.tools.list_ports.comports()
+    for port in ports:
+        if port.vid == int(device['vid'], 16) and port.pid == int (device['pid'], 16):
+            device['port'] = port.device
+            return True
+    return False
+
 # Drone has its own GPS so we will have to give it a specialized code
 # The rest will be using the GPS Ultimate module
+
 def db(STATE):
     global run
     if debug:
         print STATE
         run = False
 
+def startGPS(device):
+    """ Sets up and establishes a connection with the provided gps device.
+        if connection is successfull, it returns true, else false """
+    # Checking if GPS is Connected to a Socket
+    try:
+        child = sp.Popen("pgrep -s gpsd", shell=True, stdin=sp.PIPE, stdout=sp.PIPE, stderr=sp.PIPE)
+        output, err = child.communicate()
+        if device['port'] not in output and output != '':
+            # Kills Existing GPS Socket Connection
+            os.system("sudo killall -q gpsd")
+        if device['port'] not in output:
+            # Connect GPS to a Socket
+            os.system("gpsd %s" % (device['port']))
+    except:
+        # GPS Failed to Connect to a socket
+        return False
+
+    # Check if GPS session is valid
+    while True:
+        time.sleep(1)
+        try:
+            device['session'] = gps.gps('localhost', '2947')
+            break
+        except:
+            sp.check_all("sudo killall -q gpsd", shell=True)
+            os.system("gpsd %s" % (device['port']))
+    device['session'].stream(gps.WATCH_ENABLE | gps.WATCH_NEWSTYLE)
+    report = device['session'].next()
+
+    # Locking onto GPS
+    while report.get('mode') != 3:
+        time.sleep(1)
+        report = device['session'].next()
+    return True
+
 def broadcast_enc_pub():
     #TODO
     pass
 
-def broadcast_to_base(ID, baseID):
-    m = {'code': SEND_CONFIRM, 'seq':'1', 'id': ID}
+def broadcast_to_base(dev_id, baseID):
+    m = {'code': SEND_CONFIRM, 'seq':'1', 'id': dev_id}
     os.system("./encrypt '%s' %s < param/a3.param" % (json.dumps(m), baseID))
     db(CONFIRM)
     broadcast_enc_pub()
@@ -85,8 +144,8 @@ def direct(data):
     # ideally the drone moves to the halfway mark to prepare for release()
     #TODO
 
-def release(ID, baseID):
-    m = {'code': RELEASE_MSG, 'id': ID}
+def release(dev_id, baseID):
+    m = {'code': RELEASE_MSG, 'id': dev_id}
     os.system("./encrypt '%s' %s < param/a3.param" % (json.dumps(m), baseID))
     db(RELEASE)
     broadcast_enc_pub()
@@ -110,6 +169,28 @@ def abort(data):
     db(ABORT)
     pass
 
+def confirm_flight_plan(data):
+    global flight_plan
+    global flight_stop
+    flight_stop = 0
+    flight_plan = data.get('flight_plan')
+    if flight_plan != None:
+        m = {'code': CONFIRM_FP, 'id': dev_id, 'base': flight_plan[flight_stop]}
+        os.system("./encrypt '%s' %s < param/a3.param" % (json.dumps(m), dev_id))
+        db(UPDATE_FP)
+        broadcast_enc_pub()
+    pass
+
+def take_off(data):
+    lat = data.get('lat')
+    lng = data.get('lng')
+    #TODO Add Take Off Code here
+    #TODO Consider calling move_to_base from here
+    db(TAKE_OFF)
+
+def idle():
+    db(IDLE)
+
 def get_state_from_enc_pub():
     global digest
     m = hashlib.md5()
@@ -119,19 +200,40 @@ def get_state_from_enc_pub():
             m.update(f.read())
             if digest != m.digest():
                 digest = m.digest()
-                os.system('./decrypt < param/a3.param')
-                with open(dec_file_name) as ff:
-                    data = json.load(ff);
+                os.system('./decrypt %s < param/a3.param' % (dev_id))
+                try:
+                    with open(dec_file_name) as ff:
+                        data = json.load(ff)
+                except:
+                    os.system('./decrypt %s < param/a3.param' % (glob_id))
+                    try:
+                        with open(dec_file_name) as ff:
+                            data = json.load(ff)
+                    except:
+                        exit("dec.pub failed to decrypt")
     return data
 
 while run:
     data  = get_state_from_enc_pub()
     code  = data.get('code')
     debug = data.get('debug', False)
-    
-    if code == CONFIRM:
+
+    if len(flight_plan) == 0 and not code == UPDATE_FP:
+        code = IDLE
+
+    if code == IDLE:
+        PREV_STATE = IDLE
+        idle()
+    elif code == CONFIRM_FP:
+        PREV_STATE = CONFIRM_FP
+        confirm_flight_plan(data)
+    elif code == TAKE_OFF:
+        PREV_STATE = TAKE_OFF
+        take_off()
+        PREV_STATE = MOVE
+    elif code == CONFIRM:
         PREV_STATE = CONFIRM
-        broadcast_to_base(ID, flight_plan[flight_stop])
+        broadcast_to_base(dev_id, flight_plan[flight_stop])
     elif code == ASK_DIRECT:
         PREV_STATE = ASK_DIRECT
         ask_for_direction(flight_plan[flight_stop], flight_plan[flight_stop+1])
@@ -141,7 +243,7 @@ while run:
         PREV_STATE = RELEASE
     elif code == RELEASE: 
         PREV_STATE = RELEASE
-        release(ID, flight_plan[flight_stop])
+        release(dev_id, flight_plan[flight_stop])
     elif code == SEND:
         PREV_STATE = SEND
         send_msg(data, flight_plan[flight_stop], flight_plan[flight_stop+1])
@@ -149,6 +251,7 @@ while run:
         PREV_STATE = MOVE
         move_to_base(data)
         flight_stop += 1
+        PREV_STATE = CONFIRM
     elif code == ABORT:
         PREV_STATE = ABORT
         abort(data)

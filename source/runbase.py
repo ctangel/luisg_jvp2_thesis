@@ -30,6 +30,7 @@ REPLY_PING      = 'h'
 UPDATE          = 'i'
 GLOBAL_PING     = 'j'
 PROPOGATE       = 'k'
+START_TAKE_OFF  = 'u'
 
 # Drone Codes
 CONFRIM         = 'l'
@@ -39,6 +40,9 @@ RELEASE         = 'o'
 SEND            = 'p'
 MOVE            = 'q'
 ABORT           = 'r'
+TAKE_OFF        = 's'
+CONFIRM_FP       = 't'
+
 # Global Variables
 enc_file_name   = 'enc.pub'
 dec_file_name   = 'dec.pub'
@@ -55,8 +59,8 @@ run             = True
 
 # GPS Device Information
 GPS = {
-    "vid": "067B",
-    "pid": "2303",
+    "vid": ["067B","10C4"],
+    "pid": ["2303","EA60"],
     "port": None,
     "session": None
 }
@@ -66,25 +70,24 @@ try:
     with open("id.pub") as fn:
         dev_id = fn.read()
 except:
-    print "id.pub was not found"
-    exit()
+    exit("id.pub was not found")
 
 # Get Global Id
 try:
     with open("global.pub") as fn:
         glob_id = fn.read()
 except:
-    print "global.pub was not found"
-    exit()
+    exit("global.pub was not found")
 
 def find_device(device):
     """ Searches system's open ports for the provided device.
         If found, returns true, else false."""
     ports = serial.tools.list_ports.comports()
     for port in ports:
-        if port.vid == int(device['vid'], 16) and port.pid == int(device['pid'], 16):
-            device['port'] = port.device
-            return True
+      for i in range(len(device['vid'])):
+          if port.vid == int(device['vid'][i], 16) and port.pid == int(device['pid'][i], 16):
+              device['port'] = port.device
+              return True
     return False
 
 def db(STATE):
@@ -103,7 +106,7 @@ def startGPS(device):
         if device['port'] not in output and output != '':
             # Killing Existing GPS Socket Connection
             os.system("sudo killall -q gpsd")
-        
+
         if device['port'] not in output:
             # Connecting GPS to Socket
             os.system("gpsd %s" % (device['port']))
@@ -119,7 +122,7 @@ def startGPS(device):
             break
         except:
             sp.check_call("sudo killall -q gpsd", shell=True)
-            os.system("gpsd %s" % (device['port'])) 
+            os.system("gpsd %s" % (device['port']))
     device['session'].stream(gps.WATCH_ENABLE | gps.WATCH_NEWSTYLE)
     report = device['session'].next()
     # Locking onto GPS
@@ -152,9 +155,9 @@ def send_directions(data):
         pass
     else :
         m = {
-                'code': DIRECT, 
-                'long': base.get(data.get('base')).get('long'),  
-                'lat' : base.get(data.get('base')).get('lat'),  
+                'code': DIRECT,
+                'lng': base.get(data.get('base')).get('lng'),
+                'lat' : base.get(data.get('base')).get('lat'),
             }
     os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')))
     db(SEND_DIRECT)
@@ -200,19 +203,18 @@ def get_state_from_enc_pub():
             if digest != m.digest():
                 digest = m.digest()
                 # Try dev_id
-                os.system("./decrypt %s < param/a3.param" % (dev_id)) 
+                os.system("./decrypt %s < param/a3.param" % (dev_id))
                 try:
                     with open(dec_file_name) as ff:
                         data = json.load(ff)
-                except: 
+                except:
                     # Try glob_id
                     os.system("./decrypt %s < param/a3.param" % (glob_id))
                     try:
                         with open(dec_file_name) as ff:
                             data = json.load(ff)
                     except:
-                        print "dec.pub failed to decrypt"
-                        exit() 
+                        exit("dec.pub failed to decrypt")
     return data
 
 def get_coordinates():
@@ -247,19 +249,19 @@ def send_global_ping():
     os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), glob_id))
     db(GLOBAL_PING)
     broadcast_enc_pub()
-   
+
 def send_propogate(data):
-    ID = data.get('id') 
-    d = data.get('data') 
-    q = data.get('q') 
-    t = data.get('t') 
-   
+    ID = data.get('id')
+    d = data.get('data')
+    q = data.get('q')
+    t = data.get('t')
+
     for key in mapa.keys():
         if key not in q and key not in t and data.get(key) == None:
             q.append(key)
-    coor = get_coordinates() 
+    coor = get_coordinates()
     if d.get(dev_id) == None:
-        d[dev_id] = {"lat": coor.get('lat'), "lng": coor.get('lng')} 
+        d[dev_id] = {"lat": coor.get('lat'), "lng": coor.get('lng')}
 
     m = {'code': PROPOGATE, 'id': dev_id, "data":d, "q": q}
     if mapa.get(q[0]) == None:
@@ -273,6 +275,18 @@ def send_propogate(data):
         os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), q[0]))
     db(PROPOGATE)
     broadcast_enc_pub()
+
+def start_take_off(data):
+    m = {
+            'code': TAKE_OFF, 
+            'lat':base.get(data.get('base')).get('lat'),
+            "lng":base.get(data.get('base')).get('lat')
+        }
+    os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')))
+    db(START_TAKE_OFF)
+    broadcast_enc_pub()
+
+
 
 # Find Devices
 if find_device(GPS):
@@ -288,7 +302,7 @@ while run:
     data = get_state_from_enc_pub()
     code = data.get('code')
     debug = data.get('debug', False)
-   
+
     # set timer to fire send_ping()
     if code == IDLE:
         idle()
@@ -312,5 +326,7 @@ while run:
         send_global_ping()
     elif code == PROPOGATE:
         send_propogate(data)
+    elif code == START_TAKE_OFF:
+        start_take_off(data)
     else:
         print 'Code Not Found'
