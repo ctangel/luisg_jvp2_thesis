@@ -94,9 +94,9 @@ def find_device(device):
 def db(STATE):
     global run
     if debug:
-        with open(db_file_name) as fn:
+        with open(db_file_name, 'w') as fn:
             fn.write(STATE)
-        run = False
+        #run = False
 
 def startGPS(device):
     """ Sets up and establishes a connection with the provided gps device.
@@ -216,12 +216,13 @@ def get_state_from_enc_pub():
                         with open(dec_file_name) as ff:
                             data = json.load(ff)
                     except:
-                        exit("dec.pub failed to decrypt")
+                        pass
+                        #exit("dec.pub failed to decrypt")
     return data
 
 def get_coordinates():
     data = {'lat': None, 'lng': None}
-    if session != None:
+    if GPS.get('session') != None:
         report = GPS['session'].next()
         if report.get('class') == 'TPV':
             if hasattr(report, 'lat') and hasattr(report, 'lon'):
@@ -331,4 +332,5 @@ while run:
     elif code == START_TAKE_OFF:
         start_take_off(data)
     else:
-        print 'Code Not Found'
+        pass
+        #print 'Code Not Found'

@@ -5,6 +5,7 @@ import subprocess as sp
 import json
 import unittest
 import os
+import time
 
 # Base Codes
 IDLE            = 'a'
@@ -38,7 +39,7 @@ dec_fn  = "dec.pub"
 enc_fn  = "enc.pub"
 deb_fn  = "deb.pub"
 dev_id  = None
-child   = None
+fn_num  = 0
 
 with open("id.pub") as fn:
     dev_id = fn.read()
@@ -46,39 +47,96 @@ with open("id.pub") as fn:
 # Tests for IDLE State
 def test_state(m):
     sp.call("./encrypt '%s' %s < param/a3.param" % (json.dumps(m), dev_id), shell=True)
-    #child = sp.Popen("python runbase.py", shell=True, stdout=sp.PIPE, stdin=sp.PIPE, stderr=sp.STDOUT)
-    #print child.communicate()
-    child = sp.Popen("python runbase.py", shell=True, stdout=sp.PIPE, stdin=sp.PIPE, stderr=sp.STDOUT)
-    return child.communicate()[0]
+    time.sleep(2)
+    while not os.path.exists(deb_fn):
+        pass
+    with open(deb_fn) as fn:
+        stdout = fn.read()
+    return stdout
+
+def silent_rm(fn):
+    try:
+        os.remove(fn)
+    except:
+        pass
 
 class TestIDLEState(unittest.TestCase):
     @classmethod
-    def setupClass(cls):
-        global child
-        child = sp.Popen("python runbase.py", 
-                shell=True, 
-                stdout=sp.PIPE, 
-                stdin=sp.PIPE, 
-                stderr=sp.STDOUT)
-    @classmethod
-    def teardownClass(cls):
-        child.terminate()
-        child.kill()
+    def setUpClass(self):
+        self.child = sp.Popen("python runbase.py", shell=True)
+        time.sleep(15)
 
-    def setupModule():
-        # Remove dec.pub and enc.pub
-        os.remove(dec_fn)
-        os.remove(enc_fn)
-        os.remove(deb_fn)
+
+    @classmethod
+    def tearDownClass(self):
+        output = sp.check_output("pgrep -a python", shell=True)
+        pid = None
+        for i in output.split("\n"):
+            if "runbase.py" in i:
+                pid = i.split(" ")[0]
+        if pid != None:
+            sp.Popen("sudo kill %s" % (pid), shell=True)
+
+    def setUp(self):
+        pass
+        #silent_rm(dec_fn)
+        #silent_rm(enc_fn)
+        silent_rm(deb_fn)
 
     def test_idle_start(self):
         m = {"code": IDLE, "debug": True}
-        sp.call("./encrypt '%s' %s < param/a3.param" % (json.dumps(m), dev_id), shell=True)
-        with open(deb_fn) as fn:
-            stdout = fn.read()
-        print stdout
-        print IDLE
+        stdout = test_state(m)
         self.assertTrue(IDLE == stdout.strip())
+
+    def test_send_confirm_start(self):
+        m = {"code": SEND_CONFIRM, "id": dev_id, "debug": True}
+        stdout = test_state(m)
+        self.assertTrue(SEND_CONFIRM == stdout.strip())
+ 
+    def test_send_direct_start(self):
+        m = {"code": SEND_DIRECT, "id": dev_id, "debug": True}
+        stdout = test_state(m)
+        self.assertTrue(SEND_DIRECT == stdout.strip())
+
+    def test_release_msg_start(self):
+        m = {"code": RELEASE_MSG, "id": dev_id, "debug": True}
+        stdout = test_state(m)
+        self.assertTrue(RELEASE_MSG == stdout.strip())
+
+    def test_foward_start(self):
+        m = {"code": FORWARD, "base": dev_id, "msg": "asdf", "debug": True}
+        stdout = test_state(m)
+        self.assertTrue(FORWARD == stdout.strip())
+    
+    def test_release_acc_start(self):
+        m = {"code": RELEASE_ACC, "id": dev_id, "msg": "asdf", "debug": True}
+        stdout = test_state(m)
+        self.assertTrue(RELEASE_ACC == stdout.strip())
+
+    def test_ping_start(self):
+        m = {"code": PING, "id": dev_id, "debug": True}
+        stdout = test_state(m)
+        self.assertTrue(PING == stdout.strip())
+
+    def test_reply_ping_start(self):
+        m = {"code": REPLY_PING, "id": dev_id, "debug": True}
+        stdout = test_state(m)
+        self.assertTrue(REPLY_PING == stdout.strip())
+
+    def test_update_start(self):
+        m = {"code": UPDATE, "id": dev_id, "lng": 09.00, "lat": 12.34, "debug": True}
+        stdout = test_state(m)
+        self.assertTrue(UPDATE == stdout.strip())
+
+    def test_global_ping_start(self):
+        m = {"code": GLOBAL_PING, "debug": True}
+        stdout = test_state(m)
+        self.assertTrue(GLOBAL_PING == stdout.strip())
+
+    #def test_propogate_start(self):
+    #    m = {"code": PROPOGATE, "id": dev_id, "data":{}, "q":[dev_id], "t":[dev_id, dev_id], "debug": True}
+    #    stdout = test_state(m)
+    #    self.assertTrue(PROPOGATE == stdout.strip())
 
 """
 class TestSENDCONFIRMState(unittest.TestCase):
