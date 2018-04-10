@@ -22,7 +22,8 @@ SEND            = 'p'
 MOVE            = 'q'
 ABORT           = 'r'
 TAKE_OFF        = 's'
-CONFIRM_FP     = 't'
+CONFIRM_FP      = 't'
+REPLY_STATUS    = 'w'
 
 # Base Codes
 IDLE            = 'a'
@@ -37,6 +38,8 @@ UPDATE          = 'i'
 GLOBAL_PING     = 'j'
 PROPOGATE       = 'k'
 START_TAKE_OFF  = 'u'
+SEND_FP         = 'v'
+CHECK_STATUS    = 'x'
 
 enc_file_name   = 'enc.pub'
 dec_file_name   = 'dec.pub'
@@ -119,6 +122,19 @@ def startGPS(device):
         report = device['session'].next()
     return True
 
+def get_coordinates():
+    #TODO
+    pass
+
+def reply_status(baseID, nextBaseID):
+    coor = get_coordinates()
+    m = {'code': CHECK_REQUEST, 'id': dev_id, 'base':nextBaseID, 'lat':coor.get('lat'), 'lng': coor.get('lng')}
+    os.system("./encrypt '%s' %s < param/a3.param" % (json.dumps(m), baseID))
+    db(REPLY_STATUS)
+    broadcast_enc_pub()
+
+
+
 def broadcast_enc_pub():
     #TODO
     pass
@@ -131,7 +147,7 @@ def broadcast_to_base(dev_id, baseID):
 
 def ask_for_direction(baseID, nextBaseID):
     # request base for direction to next base
-    m = {'code': SEND_DIRECT, 'base': nextBaseID}
+    m = {'code': SEND_DIRECT, 'base': nextBaseID, 'id': baseID}
     os.system("./encrypt '%s' %s < param/a3.param" % (json.dumps(m), baseID))
     db(ASK_DIRECT)
     broadcast_enc_pub()
@@ -177,7 +193,7 @@ def confirm_flight_plan(data):
     if flight_plan != None:
         m = {'code': CONFIRM_FP, 'id': dev_id, 'base': flight_plan[flight_stop]}
         os.system("./encrypt '%s' %s < param/a3.param" % (json.dumps(m), dev_id))
-        db(UPDATE_FP)
+        db(CONFIRM_FP)
         broadcast_enc_pub()
     pass
 
@@ -218,7 +234,7 @@ while run:
     code  = data.get('code')
     debug = data.get('debug', False)
 
-    if len(flight_plan) == 0 and not code == UPDATE_FP:
+    if len(flight_plan) == 0 and not code == SEND_FP:
         code = IDLE
 
     if code == IDLE:
@@ -256,5 +272,8 @@ while run:
         PREV_STATE = ABORT
         abort(data)
         flight_stop -= 1
+    elif code == REPLY_STATUS:
+        PREV_STATE = IDLE
+        reply_status(dev_id, flight_plan[flight_stop])
     else:
         print 'error: add code to throw an exception'

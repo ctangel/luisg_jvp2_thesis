@@ -10,9 +10,11 @@
 '''
 import hashlib
 import os
+import threading
 import random
 import string
 import json
+import geopy
 import time
 import gps
 import serial.tools.list_ports
@@ -31,6 +33,8 @@ UPDATE          = 'i'
 GLOBAL_PING     = 'j'
 PROPOGATE       = 'k'
 START_TAKE_OFF  = 'u'
+SEND_FP         = 'v'
+CHECK_STATUS    = 'x'
 
 # Drone Codes
 CONFRIM         = 'l'
@@ -42,6 +46,7 @@ MOVE            = 'q'
 ABORT           = 'r'
 TAKE_OFF        = 's'
 CONFIRM_FP      = 't'
+REPLY_STATUS    = 'w'
 
 # Global Variables
 enc_file_name   = 'enc.pub'
@@ -53,10 +58,11 @@ glob_id         = None
 data            = {'code': IDLE}
 mapa            = {}
 base            = {}
-flight_plan     = ["jvp2@princeton.edu"]
+drones          = []
 msgs            = {}
 debug           = False
 run             = True
+request         = False
 
 # GPS Device Information
 GPS = {
@@ -142,8 +148,11 @@ def idle():
     db(IDLE)
 
 def send_connection_confirmation(data):
+    global drones
     m = {'code': ASK_DIRECT, 'data': 'OK'}
     os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')))
+    if data.get('id') not in drones:
+        drones.append(data.get('id'))
     db(SEND_CONFIRM)
     broadcast_enc_pub()
 
@@ -191,6 +200,8 @@ def send_release_acceptance(data):
     if data.get('msg') != msgs.get(data.get('id')):
         m['msg'] = 'FAILED'
     os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')))
+    if data.get('id') in drones:
+        drones.remove(data.get('id'))
     db(RELEASE_ACC)
     broadcast_enc_pub()
 
@@ -289,7 +300,38 @@ def start_take_off(data):
     db(START_TAKE_OFF)
     broadcast_enc_pub()
 
+def send_flight_plan(data):
+    m = {
+            'code': CONFIRM_FP, 
+            'flight_plan': data.get('flight_plan')
+        }
+    os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')))
+    db(SEND_FP)
+    broadcast_enc_pub()
 
+def trigger_request():
+    global request
+    threading.Timer(100, trigger_request)
+    request = True
+
+def request_status():
+    global request
+    for drone in drones:
+        m = {
+            'code': REPLY_STATUS,
+            'id': dev_id
+            }
+        os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), drone))
+        broadcast_enc_pub()
+    request = False
+     
+def check_status(data):
+   coors = get_coordinates()
+   coor1 = (coors.get('lat'), coors.get('lng'))
+   coor2 = (data.get('lat'), data.get('lng'))
+   if not geopy.distance.distance(coor1, coor2).miles > 0:
+       send_directon(data) 
+       pass
 
 # Find Devices
 if find_device(GPS):
@@ -301,10 +343,16 @@ else:
     print "GPS not found"
     exit()
 
+trigger_request()
+
 while run:
     data = get_state_from_enc_pub()
     code = data.get('code')
     debug = data.get('debug', False)
+    
+    # Every Once in a while, check in with all drones currentlying moving 
+    if request:
+        request_status()
 
     # set timer to fire send_ping()
     if code == IDLE:
@@ -331,6 +379,10 @@ while run:
         send_propogate(data)
     elif code == START_TAKE_OFF:
         start_take_off(data)
+    elif code == SEND_FP:
+        send_flight_plan(data)
+    elif code == CHECK_STATUS:
+        check_status(data)
     else:
         pass
         #print 'Code Not Found'
