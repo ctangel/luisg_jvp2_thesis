@@ -1,0 +1,2 @@
+TODO, FIXME, CHANGED, XXX, IDEA, HACK, NOTE, REVIEW, NB, BUG, QUESTION, COMBAK, TEMP
+^ those are all the highlights for atom just FYI

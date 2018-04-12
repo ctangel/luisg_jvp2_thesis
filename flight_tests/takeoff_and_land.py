@@ -45,6 +45,7 @@ def arm_and_takeoff(aTargetAltitude):
             print "Reached target altitude"
             break
             time.sleep(1)
+
 #Initialize the takeoff sequence to 20m
 arm_and_takeoff(20)
 
