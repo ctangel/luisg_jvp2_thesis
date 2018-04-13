@@ -23,7 +23,6 @@ BAUD_RATE = 9600
 BROADCAST = '\x00\x00\x00\x00\x00\x00\xff\xff'
 UNKNOWN = '\xff\xfe' # This is the 'I don't know' 16 bit address
 
-
 packets = Queue.Queue()
 
 # Open serial port
