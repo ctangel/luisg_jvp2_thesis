@@ -19,6 +19,7 @@ import time
 import gps
 import serial.tools.list_ports
 import subprocess as sp
+import Comms
 
 # CODES
 IDLE            = 'a'
@@ -205,32 +206,6 @@ def send_release_acceptance(data):
     db(RELEASE_ACC)
     broadcast_enc_pub()
 
-
-def get_state_from_enc_pub():
-    global digest
-    m = hashlib.md5()
-    data = {"code": IDLE}
-    if os.path.isfile(enc_file_name):
-        with open(enc_file_name) as f:
-            m.update(f.read())
-            if digest != m.digest():
-                digest = m.digest()
-                # Try dev_id
-                os.system("./decrypt %s < param/a3.param" % (dev_id))
-                try:
-                    with open(dec_file_name) as ff:
-                        data = json.load(ff)
-                except:
-                    # Try glob_id
-                    os.system("./decrypt %s < param/a3.param" % (glob_id))
-                    try:
-                        with open(dec_file_name) as ff:
-                            data = json.load(ff)
-                    except:
-                        pass
-                        #exit("dec.pub failed to decrypt")
-    return data
-
 def get_coordinates():
     data = {'lat': None, 'lng': None}
     if GPS.get('session') != None:
@@ -292,7 +267,7 @@ def send_propogate(data):
 
 def start_take_off(data):
     m = {
-            'code': TAKE_OFF, 
+            'code': TAKE_OFF,
             'lat':base.get(data.get('base')).get('lat'),
             "lng":base.get(data.get('base')).get('lat')
         }
@@ -302,7 +277,7 @@ def start_take_off(data):
 
 def send_flight_plan(data):
     m = {
-            'code': CONFIRM_FP, 
+            'code': CONFIRM_FP,
             'flight_plan': data.get('flight_plan')
         }
     os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')))
@@ -324,13 +299,13 @@ def request_status():
         os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), drone))
         broadcast_enc_pub()
     request = False
-     
+
 def check_status(data):
    coors = get_coordinates()
    coor1 = (coors.get('lat'), coors.get('lng'))
    coor2 = (data.get('lat'), data.get('lng'))
    if not geopy.distance.distance(coor1, coor2).miles > 0:
-       send_directon(data) 
+       send_directon(data)
        pass
 
 # Find Devices
@@ -344,13 +319,50 @@ else:
     exit()
 
 trigger_request()
+# Get path of Xbee
+xbee_path = "/dev/ttyUSB0"
+# Start Xbee and Connect
+comm = Comms(xbee_path)
+
+def broadcast_enc_pub(comm, dest=None, broadcast=False):
+    with open(enc_file_name) as fn:
+        data = fn.read()
+    if not broadcast:
+        comm.sendData(dest, data)
+    else:
+        comm.broadcastData(data)
+
+def get_state_from_enc_pub():
+    global digest
+    m = hashlib.md5()
+    data = {"code": IDLE}
+    if os.path.isfile(enc_file_name):
+        with open(enc_file_name) as f:
+            m.update(f.read())
+            if digest != m.digest():
+                digest = m.digest()
+                # Try dev_id
+                os.system("./decrypt %s < param/a3.param" % (dev_id))
+                try:
+                    with open(dec_file_name) as ff:
+                        data = json.load(ff)
+                except:
+                    # Try glob_id
+                    os.system("./decrypt %s < param/a3.param" % (glob_id))
+                    try:
+                        with open(dec_file_name) as ff:
+                            data = json.load(ff)
+                    except:
+                        pass
+                        #exit("dec.pub failed to decrypt")
+    return data
 
 while run:
     data = get_state_from_enc_pub()
     code = data.get('code')
     debug = data.get('debug', False)
-    
-    # Every Once in a while, check in with all drones currentlying moving 
+
+    # Every Once in a while, check in with all drones currentlying moving
     if request:
         request_status()
 
