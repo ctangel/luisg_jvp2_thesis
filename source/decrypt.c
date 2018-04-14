@@ -42,7 +42,7 @@ int main(int argc, char* argv[]) {
 
   // Read in Paring Information
   FILE *fp;
-  fp = fopen("enc.pub", "rb");
+  fp = fopen("denc.pub", "rb");
   int c;
   int n = 0;
   do {

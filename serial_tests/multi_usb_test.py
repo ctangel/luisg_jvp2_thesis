@@ -69,7 +69,7 @@ print(">>> Establishing Xbee serial port <<<")
 if find_device(xbee):
     xbee_ser = serial.Serial(xbee['port'], baudrate=xbee['baud'], timeout=readTimeout)
 else:
-    print "Xbee not found... Existing test"
+    print "Xbee not found... Exiting test"
     vehicle.close()
     exit()
 
