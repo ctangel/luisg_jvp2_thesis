@@ -53,6 +53,7 @@ run             = True
 debug           = False
 dev_id          = None
 glob_id         = None
+target          = {"lat":None, "lng":None, "alt":None}
 
 # Get ID Name
 try: 
@@ -152,9 +153,12 @@ def ask_for_direction(baseID, nextBaseID):
     db(ASK_DIRECT)
     broadcast_enc_pub()
 
-def direct(data):     
-    lng = data.get('lng')
-    lat = data.get('lat')
+def direct(data):
+    global target
+    target["waymarks"] = data.get('waymarks')
+    target["lng"] = data.get('lng')
+    target["lat"] = data.get('lat')
+    target["alt"] = data.get('alt')
     db(DIRECT)
     # code to translate coordinates into mechanical movements for the pixhawk
     # ideally the drone moves to the halfway mark to prepare for release()
@@ -167,14 +171,14 @@ def release(dev_id, baseID):
     broadcast_enc_pub()
 
 def send_msg(data, baseID, nextBaseID):
-    m = {'code': FORWARD, 'base': baseID, "msg": data.get('msg')}
+    m = {'code': FORWARD,'id':dev_id, 'base': baseID, "msg": data.get('msg')}
     os.system("./encrypt '%s' %s < param/a3.param" % (json.dumps(m), nextBaseID))
     db(SEND)
     broadcast_enc_pub()
 
 def move_to_base(data):
-    lng = data.get('lng')
-    lat = data.get('lat')
+    # Use Target
+    target["waymarks"] 
     db(MOVE)
     # code to translate coordinates into mechanical movements for the pixhawk
     # drone moves to the base
@@ -198,8 +202,9 @@ def confirm_flight_plan(data):
     pass
 
 def take_off(data):
-    lat = data.get('lat')
-    lng = data.get('lng')
+    target["lat"] = data.get('lat')
+    target["lng"] = data.get('lng')
+    target["alt"] = data.get('alt')
     #TODO Add Take Off Code here
     #TODO Consider calling move_to_base from here
     db(TAKE_OFF)

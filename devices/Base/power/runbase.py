@@ -10,12 +10,9 @@
 '''
 import hashlib
 import os
-import threading
 import random
 import string
 import json
-import math
-import geopy
 import time
 import gps
 import serial.tools.list_ports
@@ -34,11 +31,9 @@ UPDATE          = 'i'
 GLOBAL_PING     = 'j'
 PROPOGATE       = 'k'
 START_TAKE_OFF  = 'u'
-SEND_FP         = 'v'
-CHECK_STATUS    = 'x'
 
 # Drone Codes
-CONFIRM         = 'l'
+CONFRIM         = 'l'
 DIRECT          = 'm'
 ASK_DIRECT      = 'n'
 RELEASE         = 'o'
@@ -47,7 +42,6 @@ MOVE            = 'q'
 ABORT           = 'r'
 TAKE_OFF        = 's'
 CONFIRM_FP      = 't'
-REPLY_STATUS    = 'w'
 
 # Global Variables
 enc_file_name   = 'enc.pub'
@@ -57,17 +51,12 @@ digest          = None
 dev_id          = None
 glob_id         = None
 data            = {'code': IDLE}
+mapa            = {}
 base            = {}
-drones          = []
+flight_plan     = ["jvp2@princeton.edu"]
 msgs            = {}
 debug           = False
 run             = True
-request         = False
-ping            = False
-base_alt        = 5
-dev_alt         = None
-dev_lat         = None
-dev_lng         = None
 
 # GPS Device Information
 GPS = {
@@ -105,27 +94,9 @@ def find_device(device):
 def db(STATE):
     global run
     if debug:
-        with open(db_file_name, 'w') as fn:
+        with open(db_file_name) as fn:
             fn.write(STATE)
-        #run = False
-def get_bearing(lat1, lng1, lat2, lng2):
-    lat1 = math.radians(lat1)
-    lng1 = math.radians(lng1)
-    lat2 = math.radians(lat2)
-    lng2 = math.radians(lng2)
-    y = math.sin(lng2-lng1) * math.cos(lat2);
-    x = (math.cos(lat1) * math.sin(lat2)) - (math.sin(lat1) * math.cos(lat2) * math.cos(lng2-lng1));
-    brng = math.degrees(math.atan2(y, x));
-    deg = 360 - ((brng + 360) % 360);
-    return ((brng + 360) % 360);
-
-def get_new_coor(lat1, lng1, brng, d):
-    lat1 = math.radians(lat1)
-    lng1 = math.radians(lng1)
-    R = 6371.0
-    lat2 = math.asin((math.sin(lat1)*math.cos(d/R)) + (math.cos(lat1)*math.sin(d/R)*math.cos(math.radians(brng)) ));
-    lng2 = lng1 + math.atan2(math.sin(math.radians(brng))*math.sin(d/R)*math.cos(lat1), math.cos(d/R) - (math.sin(lat1)*math.sin(lat2)));
-    return {"lat":math.degrees(lat2), "lng":math.degrees(lng2)}
+        run = False
 
 def startGPS(device):
     """ Sets up and establishes a connection with the provided gps device.
@@ -171,16 +142,12 @@ def idle():
     db(IDLE)
 
 def send_connection_confirmation(data):
-    global drones
     m = {'code': ASK_DIRECT, 'data': 'OK'}
     os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')))
-    if data.get('id') not in drones:
-        drones.append(data.get('id'))
     db(SEND_CONFIRM)
     broadcast_enc_pub()
 
 def send_directions(data):
-    global base
     b = base.get(data.get('base'))
     if b == None:
         # Handle Situation when base provided is not in recognized by the base
@@ -188,38 +155,11 @@ def send_directions(data):
                 'code': ABORT
             }
         pass
-    else:
-        # Find open path
-        path = None
-        for p in b.get("paths"):
-            if b.get("paths").get(p) == None:
-                path = p
-        if path == None:
-            exit("All Paths are taken")
-
-        # Generate Path
-        b["paths"][p] = data.get('id')
-        brng = get_bearing(dev_lat, dev_lng, b.get('lat'), b.get('lng'))
-        d = 0.001
-        if p == "1":
-            left = (brng - 90) % 360
-            waymark1 = get_new_coor(lat1, lng1, left, d)
-            waymark2 = get_new_coor(b.get('lat'), b.get('lng'), left, d)
-            waymarks = [waymark1, waymark2]
-        elif p == "2":
-            waymarks = [{"lat":b.get('lat'), "lng": b.get('lng')}]
-        else:
-            right = (brng + 90) % 360
-            waymark1 = get_new_coor(lat1, lng1, right, d)
-            waymark2 = get_new_coor(b.get('lat'), b.get('lng'), right, d)
-            waymarks = [waymark1, waymark2]
-        # Send info
+    else :
         m = {
                 'code': DIRECT,
-                'waymarks': waymarks,
                 'lng': base.get(data.get('base')).get('lng'),
-                'lat': base.get(data.get('base')).get('lat'),
-                "alt": dev_alt + (base[data.get('base')].get('out') * base_alt)
+                'lat' : base.get(data.get('base')).get('lat'),
             }
     os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')))
     db(SEND_DIRECT)
@@ -240,26 +180,17 @@ def send_release_msg(data):
 def forward_release_msg(data):
     m = {
             'code': RELEASE_ACC,
-            'msg': data.get("msg"),
-            'id': data.get('id'),
-            'base': dev_id
+            'msg': data.get("msg")
         }
     os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('base')))
     db(FORWARD)
     broadcast_enc_pub()
 
 def send_release_acceptance(data):
-    global drones
-    global base
-    m = {'code': MOVE}
+    m = {'code': MOVE, 'msg':'OK'}
     if data.get('msg') != msgs.get(data.get('id')):
         m['msg'] = 'FAILED'
     os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')))
-    if data.get('id') in drones:
-        drones.remove(data.get('id'))
-    for p in base[data.get('base')].get('paths'):
-        if base[data.get('base')].get('paths').get(p) == data.get('id'):
-            base[data.get('base')]['paths'][p] = None
     db(RELEASE_ACC)
     broadcast_enc_pub()
 
@@ -285,85 +216,38 @@ def get_state_from_enc_pub():
                         with open(dec_file_name) as ff:
                             data = json.load(ff)
                     except:
-                        pass
-                        #exit("dec.pub failed to decrypt")
+                        exit("dec.pub failed to decrypt")
     return data
 
 def get_coordinates():
     data = {'lat': None, 'lng': None}
-    if GPS.get('session') != None:
+    if session != None:
         report = GPS['session'].next()
         if report.get('class') == 'TPV':
             if hasattr(report, 'lat') and hasattr(report, 'lon'):
                 data['lat'] = report.lat
                 data['lng'] = report.lon
-                data['alt'] = report.alt
     return data
 
 def send_ping():
-    global ping
-    ping = False
-    coor = get_coordinates()
-    m = {'code': REPLY_PING, 'id': dev_id, "route":1, "lat":coor.get('lat'), "lng":coor.get('lng'), "alt":coor.get('alt')}
-    for b in base:
-        if base[b].get("check") == None:
-            base[b]['check'] = 2
-        else:
-            if base[b].get("check") == 0:
-                del base[b]
-            else:
-                base[b]['check'] = base[b]['check'] - 1 
+    m = {'code': REPLY_PING, 'id': dev_id}
     os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), glob_id))
     db(PING)
     broadcast_enc_pub()
 
-def send_reply_ping(data):
+def send_reply_ping():
     coor = get_coordinates()
-    if base.get(data.get('id')) == None:
-        # add to the base with out route 1 and in route 2
-        base[data.get('id')] = {
-                "lat":data.get('lat'), 
-                "lng":data.get('lng'), 
-                "alt":data.get('alt'), 
-                "in":1, 
-                "out":2,
-                "paths": {
-                        "1": None,
-                        "2": None,
-                        "3": None
-                    }
-            }
-    m = {'code': UPDATE, 'id': dev_id, "lat": coor.get('lat'), "lng": coor.get('lng'), "alt":coor.get('alt'), "route":2}
-    os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')))
+    m = {'code': UPDATE, 'id': dev_id, "lat": coor.get('lat'), "lng": coor.get('lng')}
+    os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), glob_id))
     db(REPLY_PING)
     broadcast_enc_pub()
 
 def update_map(data):
-    coor = get_coordinates()
-    if base.get(data.get('id')) == None:
-        # add to the base with out route 1 and in route 2
-        base[data.get('id')] = {
-                "lat":data.get('lat'), 
-                "lng":data.get('lng'), 
-                "alt":data.get('alt'), 
-                "in":2, 
-                "out":1,
-                "paths": {
-                        "1": None,
-                        "2": None,
-                        "3": None
-                    }
-            }
-    # reset
-    if base.get(data.get('id')).get('check') != None:
-        base[data.get('id')]['check'] = 2
-        #base[data.get("id")]['lat'] = data.get("lat")
-        #base[data.get("id")]['lng'] = data.get("lng")
-        #base[data.get("id")]['alt'] = data.get("alt")
+    mapa[data.get("id")] = {"lat": data.get("lat"), "lng": data.get("lng")}
     db(UPDATE)
 
 def send_global_ping():
-    m = {'code': PROPOGATE, 'og':dev_id, 'id': dev_id, "data":{}, "q": [], "t": [dev_id]}
+    m = {'code': PROPOGATE, 'id': dev_id, "data":{}, "q": [], "t": [dev_id]}
     os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), glob_id))
     db(GLOBAL_PING)
     broadcast_enc_pub()
@@ -374,15 +258,15 @@ def send_propogate(data):
     q = data.get('q')
     t = data.get('t')
 
-    for key in base.keys():
+    for key in mapa.keys():
         if key not in q and key not in t and data.get(key) == None:
             q.append(key)
     coor = get_coordinates()
     if d.get(dev_id) == None:
-        d[dev_id] = {"lat": coor.get('lat'), "lng": coor.get('lng'), "alt":coor.get('alt'), "links":base.keys()}
+        d[dev_id] = {"lat": coor.get('lat'), "lng": coor.get('lng')}
 
-    m = {'code': PROPOGATE, 'og':data.get('og'), 'id': dev_id, "data":d, "q": q}
-    if base.get(q[0]) == None:
+    m = {'code': PROPOGATE, 'id': dev_id, "data":d, "q": q}
+    if mapa.get(q[0]) == None:
         i = t.pop()
         m['t'] = t
         os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), i))
@@ -391,71 +275,20 @@ def send_propogate(data):
         m['q'] = q[1:]
         m['t'] = t
         os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), q[0]))
-    
     db(PROPOGATE)
-    if not dev_id == data.get('og'):
-        broadcast_enc_pub()
-    else:
-        d[dev_id] = {"lat": coor.get('lat'), "lng": coor.get('lng'), "alt":coor.get('alt'), "links":base.keys()}
-        with open('map.pub', 'w') as fn:
-            fn.write(json.dumps(d))
-"""
-    {
-        "a": {"lat": 0, "lng": 0, "alt": 0, "links":[]},
-        "b": {"lat": 0, "lng": 0, "alt": 0, "links":[]},
-        "c": {"lat": 0, "lng": 0, "alt": 0, "links":[]}
-    }
-"""
+    broadcast_enc_pub()
+
 def start_take_off(data):
     m = {
             'code': TAKE_OFF, 
-            'lat': base.get(data.get('base')).get('lat'),
-            "lng": base.get(data.get('base')).get('lat'),
-            "alt": dev_alt + (base[data.get('base')].get('out') * base_alt)
+            'lat':base.get(data.get('base')).get('lat'),
+            "lng":base.get(data.get('base')).get('lat')
         }
-    #TODO could benefit from send_direct code for horizontal laning
     os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')))
     db(START_TAKE_OFF)
     broadcast_enc_pub()
 
-def send_flight_plan(data):
-    m = {
-            'code': CONFIRM_FP, 
-            'flight_plan': data.get('flight_plan')
-        }
-    os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')))
-    db(SEND_FP)
-    broadcast_enc_pub()
 
-def trigger_request():
-    global request
-    threading.Timer(100, trigger_request)
-    request = True
-
-def trigger_ping():
-    global ping
-    threading.Timer(100, trigger_ping)
-    ping = True
-
-
-def request_status():
-    global request
-    for drone in drones:
-        m = {
-            'code': REPLY_STATUS,
-            'id': dev_id
-            }
-        os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), drone))
-        broadcast_enc_pub()
-    request = False
-     
-def check_status(data):
-   coors = get_coordinates()
-   coor1 = (coors.get('lat'), coors.get('lng'))
-   coor2 = (data.get('lat'), data.get('lng'))
-   if not geopy.distance.distance(coor1, coor2).miles > 0:
-       send_directon(data) 
-       pass
 
 # Find Devices
 if find_device(GPS):
@@ -467,24 +300,10 @@ else:
     print "GPS not found"
     exit()
 
-trigger_request()
-trigger_ping()
-
-# On bootup, send Ping
-send_ping()
-
 while run:
     data = get_state_from_enc_pub()
     code = data.get('code')
     debug = data.get('debug', False)
-    
-    # Every Once in a while, check in with all drones currentlying moving 
-    if request:
-        request_status()
-
-    # Once in while, check try to update base map
-    if ping:
-        send_ping()
 
     # set timer to fire send_ping()
     if code == IDLE:
@@ -502,7 +321,7 @@ while run:
     elif code == PING:
         send_ping()
     elif code == REPLY_PING:
-        send_reply_ping(data)
+        send_reply_ping()
     elif code == UPDATE:
         update_map(data)
     elif code == GLOBAL_PING:
@@ -511,10 +330,5 @@ while run:
         send_propogate(data)
     elif code == START_TAKE_OFF:
         start_take_off(data)
-    elif code == SEND_FP:
-        send_flight_plan(data)
-    elif code == CHECK_STATUS:
-        check_status(data)
     else:
-        pass
-        #print 'Code Not Found'
+        print 'Code Not Found'
