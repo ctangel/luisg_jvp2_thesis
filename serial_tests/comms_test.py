@@ -31,8 +31,8 @@ print "dab"
 try:
     if find_device(XBEE):
         print XBEE.get('port')
-        xb   = Comms(XBEE.get('port'), data_only=True)
-    xb22 = Comms("/dev/ttyUSB0", data_only=True)
+        xb22   = Comms(XBEE.get('port'), data_only=True)
+    xb = Comms("/dev/ttyUSB0", data_only=True)
 except:
     print "failed..."
     exit()
