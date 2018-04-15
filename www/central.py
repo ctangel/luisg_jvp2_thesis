@@ -76,11 +76,11 @@ def hello():
   #if not running:
   #    sp.Popen("python ../run/runbase.py", shell=True)
   bases = []
-  if os.path.isFile("../run/map.pub"):
+  if os.path.isfile("../run/map.pub"):
       with open("../run/map.pub") as fn:
           bases = json.load(fn)
   #bases = [{"base": "A", "lat": 51.5, "lng": -0.09 },{"base": "B", "lat": 51.6, "lng": -0.09 }]
-  return render_template("index.html", markers=json.dumps(bases), undeviceList=os.listdir('/Volumes'),  deviceList=[f for f in os.listdir('../devices/Base') if not f.startswith('.')], droneList=[f for f in os.listdir('../devices/Drone') if not f.startswith('.')])
+  return render_template("index.html", markers=json.dumps(bases), deviceList=[f for f in os.listdir('../devices/Base') if not f.startswith('.')], droneList=[f for f in os.listdir('../devices/Drone') if not f.startswith('.')])
 
 
 @application.route("/register", methods=["POST"])

@@ -1,6 +1,8 @@
-class Comms:
-    from xbee import ZigBee
-    import Queue, serial
+from xbee import ZigBee
+import Queue
+import serial, threading, time
+
+class Comms():
 
     RESERVED_SERIAL  = '\xFF\xFE' #Necessary byte string for data transmissions
     BROADCAST        = '\x00\x00\x00\x00\x00\x00\xff\xff' #The broadcast frequency
@@ -17,17 +19,41 @@ class Comms:
 
         If construction failes, return False.
     """
-    def __init__(self, path, baud=9600, callback=self.queuedCallback, data_only=False):
+    def __init__(self, path, baud=9600, callback=None, data_only=False):
         self.path = path
         self.baud = baud
-        self.callback = callback
-        self.ser = serial.Serial(path, baudrate=baud)
-        self.xb = ZigBee(self.ser, callback=self.callback)
+        if callback is None:
+            self.callback = self.__queuedCallback
+        else:
+            self.callback = callback
+
+        try:
+            self.ser = serial.Serial(path, baudrate=baud)
+        except:
+            print "serial failed"
+            exit()
+
+        try:
+            self.xb = ZigBee(self.ser, callback=self.callback)
+        except:
+            print "xb initialization failed"
+            self.ser.close()
+            exit()
+
         self.queue = Queue.Queue()
+        self.queueAT = Queue.Queue() #Mailbox specifically for AT Responses
         self.data_only = data_only
+
 
         #TODO: type checking/null checking
         #TODO: try/except for Serial and ZigBee
+
+    """
+        releases all resources used by Comms class instantiation.
+    """
+    def close(self):
+        self.xb.halt()
+        self.ser.close()
 
     """
         If this Xbee stores only 'rx' messages, return True. Otherwise, False
@@ -36,10 +62,21 @@ class Comms:
         return self.data_only
 
     """
-        A simple callback function that will store received frames until ready to be
-        processed.
+        Will change if the mailbox is data only or not. returns the new value
+        of self.data_only
     """
-    def queuedCallback(self, data):
+    def switchDataOnly(self):
+        self.data_only = not self.data_only
+        return self.data_only
+
+    """
+        A simple callback function that will store received frames until ready to be
+        processed. If the received frame is an 'at_response', will blocks
+    """
+    def __queuedCallback(self, data):
+        if data['id'] is 'at_response':
+            self.queueAT.put(data, block=False)
+            return
         if self.data_only:
             if data['id'] != 'rx':
                 return
@@ -48,7 +85,9 @@ class Comms:
     """
         If the mailbox is empty, return true. Otherwise, return false
     """
+
     def isMailboxEmpty(self):
+        return self.queue.empty()
 
     """
         Returns the number of messages in the mailbox.
@@ -60,14 +99,16 @@ class Comms:
         Sends a 'tx' command. Sends 'data' to the address specified by 'dest'.
     """
     def sendData(self, dest, data):
-        self.xb.send('tx', dest_addr_long=dest, dest=RESERVED_SERIAL, data=data)
+        self.xb.send('tx', dest_addr_long=dest, dest=self.RESERVED_SERIAL, data=data)
+        time.sleep(0.15) #wait 15ms to ensure message can be sent out
         #TODO: type checking/null checking
 
     """
         Broadcast 'data' across the entire network, all nodes.
     """
     def broadcastData(self, data):
-        self.xb.send('tx', dest_addr_long=BROADCAST, dest=RESERVED_SERIAL, data=data)
+        self.xb.send('tx', dest_addr_long=self.BROADCAST, dest=self.RESERVED_SERIAL, data=data)
+        time.sleep(0.1)
         #TODO: type checking/null checking
 
     """
@@ -80,6 +121,23 @@ class Comms:
         if self.isMailboxEmpty():
             return False
         msg = self.queue.get_nowait()
-        if msg['id'] != 'rx':
-            return False
-        return {'rx': data['rf_data']}
+        if msg['id'] is 'rx':
+            return {'rx': msg['rf_data']}
+        elif msg['id'] is 'at_response':
+            return {'at_response': msg.get('parameter')}
+
+    """
+        Will return a 2 item list of the 64-bit address. First item is the
+        high end serial address. Second item is the low end serial address.
+    """
+    def getLocalAddr(self):
+        self.xb.send('at', command='SH')
+        time.sleep(0.1)
+        self.xb.send('at', command='SL')
+        time.sleep(0.1)
+
+        sh = self.queueAT.get_nowait()['parameter']
+        sl = self.queueAT.get_nowait()['parameter']
+        print [sh, sl]
+        return [sh, sl]
+        #":".join("{:02x}".format(ord(c)) for c in s)

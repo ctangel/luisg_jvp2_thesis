@@ -1,6 +1,6 @@
 #! /usr/bin/python
 '''
- * runbase.py
+ * testxbee.py
  *
  * Runs on a device (drone or base) and continuously scans for messages send
  * decryptes them.
@@ -17,7 +17,7 @@ import json
 import math
 import geopy
 import time
-import gps
+#import gps
 import serial.tools.list_ports
 import subprocess as sp
 import Comms
@@ -91,18 +91,18 @@ XBEE = {
 
 
 # Get ID Name
-try:
-    with open("id.pub") as fn:
-        dev_id = fn.read()
-except:
-    exit("id.pub was not found")
+#try:
+#    with open("id.pub") as fn:
+#        dev_id = fn.read()
+#except:
+#    exit("id.pub was not found")
 
 # Get Global Id
-try:
-    with open("global.pub") as fn:
-        glob_id = fn.read()
-except:
-    exit("global.pub was not found")
+#try:
+#    with open("global.pub") as fn:
+#        glob_id = fn.read()
+#except:
+#    exit("global.pub was not found")
 
 def find_device(device):
     """ Searches system's open ports for the provided device.
@@ -111,7 +111,7 @@ def find_device(device):
     for port in ports:
       for i in range(len(device['vid'])):
           if port.vid == int(device['vid'][i], 16) and port.pid == int(device['pid'][i], 16):
-              device['port'] = port.device
+              device['port'] = str(port.device)
               return True
     return False
 
@@ -182,13 +182,18 @@ def startGPS(device):
     return True
 
 def startXBEE(device):
+    print "starting xbee"
+    print "getting session"
+    device['session'] = Comms.Comms(device.get('port'), data_only=True)
+    print device
+    #serial_num = device.get('session').getLocalAddr()
     try:
-        device['session'] = Comms(device.get('path'), data_only=True)
-        serial_num = device.get('session').getLocalAddr()
+        time.sleep(1)
         print serial_num
         device['low'] = serial_num[0]
         return True
     except:
+        device['session'].stop()
         return False
 
 def idle():
@@ -459,20 +464,23 @@ def check_status(data):
        pass
 
 # Find Devices
-if find_device(GPS):
-    if not startGPS(GPS):
-        print GPS
-        exit("GPS Failed to Connect")
-else:
-    print "GPS not found"
-    exit()
+#if find_device(GPS):
+#    if not startGPS(GPS):
+#        print GPS
+#        exit("GPS Failed to Connect")
+#else:
+#    print "GPS not found"
+#    exit()
 
+print "finding xbee"
 if find_device(XBEE):
+    print "found, starting it up"
+    print XBEE
     if not startXBEE(XBEE):
         print XBEE
         exit("XBEE Failed to Connect")
 else:
-    print "GPS not found"
+    print "Xbee found"
     exit()
 
 #TODO Trun back one
