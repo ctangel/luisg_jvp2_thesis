@@ -19,6 +19,7 @@ import geopy
 import time
 #import gps
 import serial.tools.list_ports
+import binascii
 import subprocess as sp
 import Comms
 
@@ -73,20 +74,19 @@ dev_lng         = None
 
 # GPS Device Information
 GPS = {
-    "vid": ["067B","10C4"],
-    "pid": ["2303","EA60"],
-    "port": None,
-    "session": None
+    "vid":      ["067B","10C4"],
+    "pid":      ["2303","EA60"],
+    "port":     None,
+    "session":  None
 }
 
 # XBEE Device Information
 XBEE = {
-    "vid": ["0403"],
-    "pid": ["6015"],
-    "port": None,
-    "low": None,
-    "high":'\x00\x13\xA2\x00',
-    "session": None
+    "vid":      ["0403"],
+    "pid":      ["6015"],
+    "port":     None,
+    "addr":      None,
+    "session":  None
 }
 
 
@@ -184,9 +184,9 @@ def startGPS(device):
 def startXBEE(device):
     try:
         device['session'] = Comms.Comms(device.get('port'), data_only=True)
-        serial_num = device.get('session').getLocalAddr()
+        addr = device.get('session').getLocalAddr()
         time.sleep(1)
-        device['low'] = serial_num[1]
+        device['addr'] = binascii.hexlify(addr[0] + addr[1])
         return True
     except:
         device['session'].close()
@@ -317,7 +317,8 @@ def send_ping():
     ping = False
     coor = get_coordinates()
     m = {'code': REPLY_PING, 'id': dev_id,
-            #"low":XBEE.get('low'), "route":1,
+            "addr":XBEE.get('addr'),
+            "route":1,
             "lat":coor.get('lat'),
             "lng":coor.get('lng'),
             "alt":coor.get('alt')}
@@ -341,7 +342,7 @@ def send_reply_ping(data):
                 "lat":data.get('lat'),
                 "lng":data.get('lng'),
                 "alt":data.get('alt'),
-                "low":data.get('low'),
+                "addr":binascii.unhexlify(data.get('addr')),
                 "in":1,
                 "out":2,
                 "paths": {
@@ -350,10 +351,10 @@ def send_reply_ping(data):
                         "3": None
                     }
             }
-        m = {'code': UPDATE, 'id': dev_id, "low":XBEE.get('low'), "lat": coor.get('lat'), "lng": coor.get('lng'), "alt":coor.get('alt'), "route":2}
+        m = {'code': UPDATE, 'id': dev_id, "addr":XBEE.get('addr'), "lat": coor.get('lat'), "lng": coor.get('lng'), "alt":coor.get('alt'), "route":2}
     os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')))
     db(REPLY_PING)
-    broadcast_enc_pub()
+    broadcast_enc_pub(base.get(data.get('id')).get('addr'))
 
 def update_map(data):
     coor = get_coordinates()
@@ -363,7 +364,7 @@ def update_map(data):
                 "lat":data.get('lat'),
                 "lng":data.get('lng'),
                 "alt":data.get('alt'),
-                "low":data.get('low'),
+                "addr":binascii.unhexlify(data.get('sddr')),
                 "in":2,
                 "out":1,
                 "paths": {
