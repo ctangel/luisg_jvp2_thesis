@@ -1,6 +1,6 @@
 #! /usr/bin/python
 '''
- * testxbee.py
+ * runbase.py
  *
  * Runs on a device (drone or base) and continuously scans for messages send
  * decryptes them.
@@ -17,7 +17,7 @@ import json
 import math
 import geopy
 import time
-#import gps
+import gps
 import serial.tools.list_ports
 import subprocess as sp
 import Comms
@@ -111,7 +111,7 @@ def find_device(device):
     for port in ports:
       for i in range(len(device['vid'])):
           if port.vid == int(device['vid'][i], 16) and port.pid == int(device['pid'][i], 16):
-              device['port'] = str(port.device)
+              device['port'] = port.device
               return True
     return False
 
@@ -183,26 +183,13 @@ def startGPS(device):
 
 def startXBEE(device):
     try:
-        device['session'] = Comms.Comms(device.get('port'), data_only=True)
+        device['session'] = Comms(device.get('path'), data_only=True)
         serial_num = device.get('session').getLocalAddr()
-        time.sleep(1)
-        device['low'] = serial_num[1]
+        print serial_num
+        device['low'] = serial_num[0]
         return True
     except:
-        device['session'].close()
         return False
-
-def broadcast_enc_pub(dest=None, broadcast=False):
-    with open(enc_file_name) as fn:
-        data = fn.read()
-    print data
-    if broadcast:
-        XBEE.get('session').broadcastData(data)
-    elif base.get(dest) != None:
-        dest_addr = XBEE.get('high') + base.get('low')
-        XBEE.get('session').sendData(dest_addr, data)
-    else:
-        exit("Failed to send")
 
 def idle():
     global run
@@ -316,11 +303,7 @@ def send_ping():
     global ping
     ping = False
     coor = get_coordinates()
-    m = {'code': REPLY_PING, 'id': dev_id,
-            #"low":XBEE.get('low'), "route":1,
-            "lat":coor.get('lat'),
-            "lng":coor.get('lng'),
-            "alt":coor.get('alt')}
+    m = {'code': REPLY_PING, 'id': dev_id, "low":XBEE.get('low'), "route":1, "lat":coor.get('lat'), "lng":coor.get('lng'), "alt":coor.get('alt')}
     for b in base:
         if base[b].get("check") == None:
             base[b]['check'] = 2
@@ -331,7 +314,7 @@ def send_ping():
                 base[b]['check'] = base[b]['check'] - 1
     os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), glob_id))
     db(PING)
-    broadcast_enc_pub(broadcast=True)
+    broadcast_enc_pub()
 
 def send_reply_ping(data):
     coor = get_coordinates()
@@ -476,19 +459,21 @@ def check_status(data):
        pass
 
 # Find Devices
-#if find_device(GPS):
-#    if not startGPS(GPS):
-#        print GPS
-#        exit("GPS Failed to Connect")
-#else:
-#    print "GPS not found"
-#    exit()
+if find_device(GPS):
+    if not startGPS(GPS):
+        print GPS
+        exit("GPS Failed to Connect")
+else:
+    print "GPS not found"
+    exit()
 
 if find_device(XBEE):
     if not startXBEE(XBEE):
+        print XBEE
         exit("XBEE Failed to Connect")
 else:
-    exit("Xbee not found")
+    print "GPS not found"
+    exit()
 
 #TODO Trun back one
 #trigger_request()
@@ -497,12 +482,24 @@ else:
 # On bootup, send Ping
 send_ping()
 
+
+def broadcast_enc_pub(dest=None, broadcast=False):
+    with open(enc_file_name) as fn:
+        data = fn.read()
+    if base.get(dest) != None:
+        dest_addr = XBEE.get('high') + base.get('low')
+        if not broadcast:
+            XBEE.get('session').sendData(dest_addr, data)
+        else:
+             XBEE.get('session').broadcastData(data)
+    else:
+        exit("Failed to send")
 def get_state_from_enc_pub():
     global digest
     m = hashlib.md5()
     data = {"code": IDLE}
     # read a file called enc.pub
-    if not XBEE.get('session').isMailboxEmpty():
+    if not XBEE.get('session').isMailBoxEmpty():
         data = XBEE.get('session').readMessage()
         with open(denc_file_name, 'w') as fn:
             fn.write(data)
@@ -527,54 +524,50 @@ def get_state_from_enc_pub():
                     except:
                         pass
                         #exit("dec.pub failed to decrypt")
-                print data
     return data
-try:
-    while run:
-        data = get_state_from_enc_pub()
-        code = data.get('code')
-        debug = data.get('debug', False)
 
-        # Every Once in a while, check in with all drones currentlying moving
-        if request:
-            request_status()
+while run:
+    data = get_state_from_enc_pub()
+    code = data.get('code')
+    debug = data.get('debug', False)
 
-        # Once in while, check try to update base map
-        if ping:
-            send_ping()
+    # Every Once in a while, check in with all drones currentlying moving
+    if request:
+        request_status()
 
-        # set timer to fire send_ping()
-        if code == IDLE:
-            idle()
-        elif code == SEND_CONFIRM:
-            send_connection_confirmation(data)
-        elif code == SEND_DIRECT:
-            send_directions(data)
-        elif code == RELEASE_MSG:
-            send_release_msg(data)
-        elif code == FORWARD:
-            forward_release_msg(data)
-        elif code == RELEASE_ACC:
-            send_release_acceptance(data)
-        elif code == PING:
-            send_ping()
-        elif code == REPLY_PING:
-            send_reply_ping(data)
-        elif code == UPDATE:
-            update_map(data)
-        elif code == GLOBAL_PING:
-            send_global_ping()
-        elif code == PROPOGATE:
-            send_propogate(data)
-        elif code == START_TAKE_OFF:
-            start_take_off(data)
-        elif code == SEND_FP:
-            send_flight_plan(data)
-        elif code == CHECK_STATUS:
-            check_status(data)
-        else:
-            pass
-            #print 'Code Not Found'
-except (KeyboardInterrupt):
-    XBEE.get('session').close()
-    exit("closed")
+    # Once in while, check try to update base map
+    if ping:
+        send_ping()
+
+    # set timer to fire send_ping()
+    if code == IDLE:
+        idle()
+    elif code == SEND_CONFIRM:
+        send_connection_confirmation(data)
+    elif code == SEND_DIRECT:
+        send_directions(data)
+    elif code == RELEASE_MSG:
+        send_release_msg(data)
+    elif code == FORWARD:
+        forward_release_msg(data)
+    elif code == RELEASE_ACC:
+        send_release_acceptance(data)
+    elif code == PING:
+        send_ping()
+    elif code == REPLY_PING:
+        send_reply_ping(data)
+    elif code == UPDATE:
+        update_map(data)
+    elif code == GLOBAL_PING:
+        send_global_ping()
+    elif code == PROPOGATE:
+        send_propogate(data)
+    elif code == START_TAKE_OFF:
+        start_take_off(data)
+    elif code == SEND_FP:
+        send_flight_plan(data)
+    elif code == CHECK_STATUS:
+        check_status(data)
+    else:
+        pass
+        #print 'Code Not Found'

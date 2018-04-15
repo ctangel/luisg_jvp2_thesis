@@ -103,7 +103,8 @@ try:
         glob_id = fn.read()
 except:
     exit("global.pub was not found")
-
+print "id: %s" % dev_id
+print "glob: %s" % glob_id
 def find_device(device):
     """ Searches system's open ports for the provided device.
         If found, returns true, else false."""
@@ -197,8 +198,10 @@ def broadcast_enc_pub(dest=None, broadcast=False):
         data = fn.read()
     print data
     if broadcast:
+        print "broadcasting"
         XBEE.get('session').broadcastData(data)
     elif base.get(dest) != None:
+        print "sending to %s" % dest
         dest_addr = XBEE.get('high') + base.get('low')
         XBEE.get('session').sendData(dest_addr, data)
     else:
@@ -353,7 +356,7 @@ def send_reply_ping(data):
         m = {'code': UPDATE, 'id': dev_id, "low":XBEE.get('low'), "lat": coor.get('lat'), "lng": coor.get('lng'), "alt":coor.get('alt'), "route":2}
     os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')))
     db(REPLY_PING)
-    broadcast_enc_pub()
+    broadcast_enc_pub(broadcast=True)
 
 def update_map(data):
     coor = get_coordinates()
@@ -502,6 +505,7 @@ def get_state_from_enc_pub():
     m = hashlib.md5()
     data = {"code": IDLE}
     # read a file called enc.pub
+    #print XBEE.get('session').isMailboxEmpty()
     if not XBEE.get('session').isMailboxEmpty():
         data = XBEE.get('session').readMessage()
         with open(denc_file_name, 'w') as fn:

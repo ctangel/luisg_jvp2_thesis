@@ -5,7 +5,7 @@ import serial, threading, time
 class Comms():
 
     RESERVED_SERIAL  = '\xFF\xFE' #Necessary byte string for data transmissions
-    BROADCAST        = '\x00\x00\x00\x00\x00\x00\xff\xff' #The broadcast frequency
+    BROADCAST        = '\x00\x00\x00\x00\x00\x00\xFF\xFF' #The broadcast frequency
     SERIAL_NUM_HIGH  = '\x00\x13\xA2\x00' #same for all devices
 
     """

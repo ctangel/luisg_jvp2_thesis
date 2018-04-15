@@ -131,8 +131,8 @@ class Comms():
         high end serial address. Second item is the low end serial address.
     """
     def getLocalAddr(self):
-        #self.xb.send('at', command='SH')
-        #time.sleep(0.1)
+        self.xb.send('at', command='SH')
+        time.sleep(0.1)
         self.xb.send('at', command='SL')
         time.sleep(0.1)
 

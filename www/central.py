@@ -92,8 +92,11 @@ def register():
   deviceUser = input_json['deviceUser']
   deviceIP = input_json['deviceIP']
   devicePass = input_json['devicePass']
-  devicePath = '../devices/' + deviceType    
-
+  if deviceName == "central":
+      devicePath = '/run/'
+  else:
+    devicePath = '../devices/' + deviceType    
+  
   if deviceName in os.listdir("../devices/Drone"):
     return '400'
   if deviceName in os.listdir("../devices/Base"):
@@ -114,6 +117,8 @@ def register():
   #os.system("cp ../exec/decrypt %s/%s" % (devicePath, deviceName))
   os.system("cp ../source/decrypt.c %s/%s" % (devicePath, deviceName))
   os.system("cp ../source/compile.py %s/%s" % (devicePath, deviceName))
+  os.system("cp ../source/Comms.py %s/%s" % (devicePath, deviceName))
+  os.system("cp ../source/testxbee.py %s/%s" % (devicePath, deviceName))
   if deviceType == 'Base':
     os.system("cp ../source/runbase.py %s/%s" % (devicePath, deviceName))
     os.system("cp ../source/testbase.py %s/%s" % (devicePath, deviceName))
@@ -124,7 +129,8 @@ def register():
   
   # try to send code to pi via scp
   # sshpass -p thesis123 scp -r ../devices/Base/{deviceName} pi%10.0.1.128:/home/pi
-  os.system("sshpass -p %s scp -r %s/%s/. %s@%s:/home/%s/run" % (devicePass, devicePath, deviceName, deviceUser, deviceIP, deviceUser))
+  if deviceName != "central":
+    os.system("sshpass -p %s scp -r %s/%s/. %s@%s:/home/%s/run" % (devicePass, devicePath, deviceName, deviceUser, deviceIP, deviceUser))
 
   return '200'#
 
