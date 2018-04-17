@@ -19,13 +19,12 @@ int main(int argc, char* argv[]) {
   char id[MAX_LENGTH];  // device id
   char gid[MAX_LENGTH]; // global id
   char temp[MAX_LENGTH];
-  char *enc;
   size_t count = fread(param, 1, 1024, stdin);
 
   if (!count) pbc_die("input error\n");
 
   // Check Arguments
-  if (argc != 2) {
+  if (argc != 3) {
     printf("Argument not provided");
     exit(EXIT_FAILURE);
   }
@@ -42,24 +41,15 @@ int main(int argc, char* argv[]) {
 
   // Read in Paring Information
   FILE *fp;
-  fp = fopen("denc.pub", "rb");
   int c;
-  int n = 0;
-  do {
-    c = fgetc(fp);
-    if (feof(fp)) {
-      break;
-    }
-    str[n] = (char)c;
-    n++;
-  } while(1);
-  str[n] = '\0';
-  fclose(fp);
-  enc = (char*) malloc(sizeof(char) * (n));
-  for (int i = 0; i < n; i++) {
-    enc[i] = str[i];
-  }
-  enc[n] = '\0';
+  
+  int len = strlen(argv[2]); 
+  size_t final_len = len / 2;
+  unsigned char* enc = (unsigned char*)malloc((final_len+1) * sizeof(*enc));
+  for (size_t i=0, j=0; j<final_len; i+=2, j++)
+      enc[j] = (argv[2][i] % 32 + 9) % 25 * 16 + (argv[2][i+1] % 32 + 9) % 25;
+  enc[final_len+1] = '\0';
+  // https://gist.github.com/xsleonard/7341172
 
   fp = fopen("id.pub", "r");
   while (fgets(str, MAX_LENGTH,fp) != NULL) {
@@ -93,21 +83,19 @@ int main(int argc, char* argv[]) {
   fclose(fp);
   
   // Decryption of messages
-  unsigned char output[n];
+  unsigned char output[final_len];
   if (strcmp(argv[1], id) == 0) {
-    decrypt((unsigned char*)enc, n, &r, &P, &sQid, &pairing, output);
+    decrypt((unsigned char*)enc, final_len, &r, &P, &sQid, &pairing, output);
    
   } else if (strcmp(argv[1], gid) == 0) {
-    decrypt((unsigned char*)enc, n, &r, &P, &gQid, &pairing, output);
+    decrypt((unsigned char*)enc, final_len, &r, &P, &gQid, &pairing, output);
   } else {
     printf("Incorrect ID Prodvided");
     exit(EXIT_FAILURE);
   } 
 
-  fp = fopen("dec.pub", "wb");
-  fwrite(output, strlen((const char*)output), 1, fp);
-  fclose(fp);
-  
+  printf("%s", (const char*)output);
+
   free(enc);
   return 0;
 }

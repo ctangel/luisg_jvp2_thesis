@@ -56,5 +56,8 @@ int main(int argc, char *argv[]) {
   fwrite(enc, ((get_block_size((const unsigned char*)m) * 16)+1),1,fpp);
   fclose(fpp);
 
+  for (int i = 0; i < (get_block_size((const unsigned char*)m) *16); i++) {
+    printf("%02x",(int)enc[i]);
+  }
   return 0;
 }
