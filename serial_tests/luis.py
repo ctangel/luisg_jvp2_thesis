@@ -1,5 +1,5 @@
 from Comms import Comms
-import threading, time, serial.tools.list_ports, json
+import threading, time, serial.tools.list_ports, json, binascii
 
 XBEE = {
     "vid": ["0403"],
@@ -54,7 +54,8 @@ print "\tmessage count: " + str(xb.messageCount())
 print "\n/** Sending Messages"
 data1 = "hey there! 1, from xb01"
 data2 = "hey there! 2, from xb01"
-data3 = bytecode_to_hex(self[0]) + bytecode_to_hex(self[1])
+#data3 = bytecode_to_hex(self[0]) + bytecode_to_hex(self[1])
+data3 = binascii.hexlify(self[0]) + binascii.hexlify(self[1])
 dest = SERIAL_NUM_HIGH + SERIAL_XB22_LOW #XB22 -> XB01
 #xb.sendData(dest=dest, data = data1)
 #xb.sendData(dest=dest, data = data2)
@@ -72,25 +73,19 @@ try:
             data = json.loads(d)
             print data
             if data.get('code') == "PING":
-                target = data.get('addr')
+                target = binascii.unhexlify(data.get('addr'))
                 print "before replace"
+                print target
                 print repr(target)
                 print
-                data4 = bytecode_to_hex(self[0]) + bytecode_to_hex(self[1])
-                target = target.replace("-", "\\x")
+                #data4 = bytecode_to_hex(self[0]) + bytecode_to_hex(self[1])
+                data4 = binascii.hexlify(self[0]) + binascii.hexlify(self[1])
+                #target = target.replace("-", "\\x")
                 print "after replace"
                 print type(target)
                 print repr(target)
-                print
-                print "bytes"
-                print bytes(target)
-                print type(bytes(target))
-                print
-                print "Unicode"
-                print target.encode('utf-8')
-                print type(target.encode('utf-8'))
                 
-                #xb.sendData(dest=bytes(target), data='{"code":"REPLY","addr":"%s"}' % data4)
+                xb.sendData(dest=target, data='{"code":"REPLY","addr":"%s"}' % data4)
             elif data.get('code') == "REPLY":
                 reply = xb.readMessage()
                 print reply
