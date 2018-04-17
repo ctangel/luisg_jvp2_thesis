@@ -70,22 +70,11 @@ try:
     while True:
         if not xb.isMailboxEmpty():
             d = xb.readMessage().get('rx')
-            print d
             data = json.loads(d)
-            print data
             if data.get('code') == "PING":
                 target = binascii.unhexlify(data.get('addr'))
-                print "before replace"
-                print repr(target)
-                print
-                #data4 = bytecode_to_hex(self[0]) + bytecode_to_hex(self[1])
                 data4 = binascii.hexlify(self[0]) + binascii.hexlify(self[1])
                 target = target.replace("-", "\\x")
-                print "after replace"
-                print (target)
-                print repr(target)
-                print type(target)
-
                 xb.sendData(dest=target, data='{"code":"REPLY","addr":"%s"}' % data4)
             elif data.get('code') == "REPLY":
                 reply = xb.readMessage()
