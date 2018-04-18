@@ -229,9 +229,9 @@ def broadcast_enc_pub(dest=None, data=None):
     if dest == None:
         XBEE.get('session').broadcastData(data)
     elif bases.get(dest) != None:
-        print dest
-        dest_addr = binascii.unhexlify(XBEE.get('addr'))
-        XBEE.get('session').sendData(dest_addr, hdata)
+        XBEE.get('session').sendData(bases.get(dest).get('addr'), data)
+    elif drones.get(dest) != None:
+        XBEE.get('session').sendData(droens.get(dest).get('addr'), data)
     else:
         print "Failed to send"
         #exit("Failed to send")
@@ -251,7 +251,7 @@ def send_connection_confirmation(data):
     if data.get('id') not in drones:
         drones[data.get('id')] = {"addr": binascii.unhexlify(data.get('addr'))}
     db(SEND_CONFIRM)
-    broadcast_enc_pub(drones.get(data.get('id')).get('addr'), enc_data)
+    broadcast_enc_pub(data.get('id'), enc_data)
 
 def send_directions(data):
     global bases
@@ -297,7 +297,7 @@ def send_directions(data):
             }
     enc_data = sp.check_output("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')), shell=True)
     db(SEND_DIRECT)
-    broadcast_enc_pub(drones.get(data.get('id')).get('addr'), enc_data)
+    broadcast_enc_pub(data.get('id'), enc_data)
 
 def send_release_msg(data):
     global msgs
@@ -310,7 +310,7 @@ def send_release_msg(data):
     msgs[data.get('id')] = m.get('msg')
     enc_data = sp.check_output("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')), shell=True)
     db(RELEASE_MSG)
-    broadcast_enc_pub(drones.get(data.get('id')).get('addr'), enc_data)
+    broadcast_enc_pub(data.get('id'), enc_data)
 
 def forward_release_msg(data):
     m = {
@@ -321,7 +321,7 @@ def forward_release_msg(data):
         }
     enc_data = sp.check_output("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('base')), shell=True)
     db(FORWARD)
-    broadcast_enc_pub(bases.get(data.get('base')).get('addr'), enc_data)
+    broadcast_enc_pub(data.get('base'), enc_data)
 
 def send_release_acceptance(data):
     global drones
@@ -334,7 +334,7 @@ def send_release_acceptance(data):
         if bases[data.get('base')].get('paths').get(p) == data.get('id'):
             bases[data.get('base')]['paths'][p] = None
     db(RELEASE_ACC)
-    broadcast_enc_pub(dreons.get(data.get('id')).get('addr'), enc_data)
+    broadcast_enc_pub(data.get('id'), enc_data)
     if data.get('id') in drones:
         del drones[data.get('id')]
 
@@ -381,7 +381,7 @@ def send_reply_ping(data):
             }
         m = {'code': UPDATE, 'id': dev_id, "addr":XBEE.get('addr'), "lat": coor.get('lat'), "lng": coor.get('lng'), "alt":coor.get('alt'), "route":2}
         enc_data = sp.check_output("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')), shell=True)
-        broadcast_enc_pub(bases[data.get('id')].get('addr'), enc_data)
+        broadcast_enc_pub(data.get('id'), enc_data)
     db(REPLY_PING)
 
 def update_map(data):

@@ -12,6 +12,17 @@ import hashlib
 import os
 import random
 import json
+import binascii
+import subprocess as sp
+import threading
+import string
+import math
+import binascii
+import time
+import gps
+import serial.tools.list_ports
+import Comms
+
 
 # CODES
 CONFIRM         = 'l'
@@ -48,6 +59,7 @@ message         = ' '
 data            = {'code': CONFIRM}
 flight_plan     = []
 flight_stop     = 0;
+bases           = {}
 PREV_STATE      = CONFIRM
 run             = True
 debug           = False
@@ -55,19 +67,23 @@ dev_id          = None
 glob_id         = None
 target          = {"lat":None, "lng":None, "alt":None}
 
-# Get ID Name
-try: 
-    with open("id.pub") as fn:
-        dev_id = fn.read()
-except:
-    exit("id.pub was not found")
+# GPS Device Information
+GPS = {
+    "vid": ["067B","10C4"],
+    "pid": ["2303","EA60"],
+    "port": None,
+    "session": None
+}
 
-# Get Global ID
-try:
-    with open("global.pub") as fn:
-        glob_id = fn.read()
-except:
-    exit("global.pub was not found")
+# XBEE Device Information
+XBEE = {
+    "vid":      ["0403"],
+    "pid":      ["6015"],
+    "port":     None,
+    "addr":     None,
+    "session":  None
+}
+
 
 def find_device(device):
     """ Searches system's open ports for the provided device.
@@ -123,35 +139,77 @@ def startGPS(device):
         report = device['session'].next()
     return True
 
+def startXBEE(device):
+    try:
+        device['session'] = Comms.Comms(device.get('port'), data_only=True)
+        addr = device.get('session').getLocalAddr()
+        time.sleep(1)
+        device['addr'] = addr[0] + addr[1]
+        return True
+    except:
+        device['session'].close()
+        return False
+
+
 def get_coordinates():
     #TODO
     pass
 
-def reply_status(baseID, nextBaseID):
-    coor = get_coordinates()
-    m = {'code': CHECK_REQUEST, 'id': dev_id, 'base':nextBaseID, 'lat':coor.get('lat'), 'lng': coor.get('lng')}
-    os.system("./encrypt '%s' %s < param/a3.param" % (json.dumps(m), baseID))
-    db(REPLY_STATUS)
-    broadcast_enc_pub()
+def get_state_from_enc_pub():
+    global digest
+    m = hashlib.md5()
+    data = {"code": IDLE}
+    msg = 'd'
+    if not XBEE.get('session').isMailboxEmpty():
+        print "\t\tYou have mail!"
+        msg = XBEE.get('session').readMessage().get('rx')
+        m.update(msg)
+        if digest != m.digest():
+            digest = m.digest()
+            # Try dev_id
+            print "\t\ttrying id... %s" % msg
+            dec = sp.check_output("./decrypt %s %s < param/a3.param" % (dev_id, msg), shell=True)
+            try:
+                data = json.loads(dec)
+            except:
+                # Try glob_id
+                print "\t\ttrying global id... %s" % msg
+                dec = sp.check_output("./decrypt %s %s < param/a3.param" % (glob_id, msg), shell=True)
+                try:
+                    data = json.loads(dec)
+                except:
+                    print "\t\tpass"
+                    pass
+    return data
 
+def broadcast_enc_pub(dest=None, data=None):
+    print "Broadcasting..."
+    print data
+    if dest == None:
+        XBEE.get('session').broadcastData(data)
+    elif bases.get(dest) != None:
+        dest_addr = base.get(dest).get('addr')
+        XBEE.get('session').sendData(dest_addr, hdata)
+    else:
+        print "Failed to send"
+        #exit("Failed to send")
 
+#
+#   State Machtine
+#
 
-def broadcast_enc_pub():
-    #TODO
-    pass
-
-def broadcast_to_base(dev_id, baseID):
-    m = {'code': SEND_CONFIRM, 'seq':'1', 'id': dev_id}
-    os.system("./encrypt '%s' %s < param/a3.param" % (json.dumps(m), baseID))
+def broadcast_to_base(baseID):
+    m = {'code': SEND_CONFIRM, 'seq':'1', 'id': dev_id, "addr":XBEE.get('addr')}
+    enc_data = sp.check_output("./encrypt '%s' %s < param/a3.param" % (json.dumps(m), baseID), shell=True)
     db(CONFIRM)
-    broadcast_enc_pub()
+    broadcast_enc_pub(baseID, enc_data)
 
 def ask_for_direction(baseID, nextBaseID):
     # request base for direction to next base
-    m = {'code': SEND_DIRECT, 'base': nextBaseID, 'id': baseID}
-    os.system("./encrypt '%s' %s < param/a3.param" % (json.dumps(m), baseID))
+    m = {'code': SEND_DIRECT, 'base': nextBaseID, 'id': dev_id}
+    enc_data = sp.check_output("./encrypt '%s' %s < param/a3.param" % (json.dumps(m), baseID), shell=True)
     db(ASK_DIRECT)
-    broadcast_enc_pub()
+    broadcast_enc_pub(baseID, enc_data)
 
 def direct(data):
     global target
@@ -164,21 +222,21 @@ def direct(data):
     # ideally the drone moves to the halfway mark to prepare for release()
     #TODO
 
-def release(dev_id, baseID):
+def release(baseID):
     m = {'code': RELEASE_MSG, 'id': dev_id}
-    os.system("./encrypt '%s' %s < param/a3.param" % (json.dumps(m), baseID))
+    enc_data = sp.check_output("./encrypt '%s' %s < param/a3.param" % (json.dumps(m), baseID), shell=True)
     db(RELEASE)
-    broadcast_enc_pub()
+    broadcast_enc_pub(bases.get(baseID).get('addr'), enc_data)
 
 def send_msg(data, baseID, nextBaseID):
     m = {'code': FORWARD,'id':dev_id, 'base': baseID, "msg": data.get('msg')}
-    os.system("./encrypt '%s' %s < param/a3.param" % (json.dumps(m), nextBaseID))
+    enc_data = sp.system("./encrypt '%s' %s < param/a3.param" % (json.dumps(m), nextBaseID), shell=True)
     db(SEND)
-    broadcast_enc_pub()
+    broadcast_enc_pub(newBaseID, enc_data)
 
 def move_to_base(data):
     # Use Target
-    target["waymarks"] 
+    target["waymarks"]
     db(MOVE)
     # code to translate coordinates into mechanical movements for the pixhawk
     # drone moves to the base
@@ -189,17 +247,31 @@ def abort(data):
     db(ABORT)
     pass
 
+def reply_status(baseID, nextBaseID):
+    coor = get_coordinates()
+    m = {'code': CHECK_REQUEST, 'id': dev_id, 'base':nextBaseID, 'lat':coor.get('lat'), 'lng': coor.get('lng')}
+    enc_data = sp.check_output("./encrypt '%s' %s < param/a3.param" % (json.dumps(m), baseID), shell=True)
+    db(REPLY_STATUS)
+    broadcast_enc_pub(baseID, enc_data)
+
+
 def confirm_flight_plan(data):
     global flight_plan
     global flight_stop
+    global flight_plan
+    global bases
     flight_stop = 0
     flight_plan = data.get('flight_plan')
+    addrs = data.get('addrs')
+    for i, base in eneruate(flight_plan):
+        bases[base] = {"addr": addrs[i]}
+
+    #TODO Make sure data has id of central and addrs
     if flight_plan != None:
         m = {'code': CONFIRM_FP, 'id': dev_id, 'base': flight_plan[flight_stop]}
-        os.system("./encrypt '%s' %s < param/a3.param" % (json.dumps(m), dev_id))
+        enc_data = sp.check_output("./encrypt '%s' %s < param/a3.param" % (json.dumps(m), dev_id), shell=True)
         db(CONFIRM_FP)
-        broadcast_enc_pub()
-    pass
+        broadcast_enc_pub(data.get('id'), enc_data)
 
 def take_off(data):
     target["lat"] = data.get('lat')
@@ -212,27 +284,20 @@ def take_off(data):
 def idle():
     db(IDLE)
 
-def get_state_from_enc_pub():
-    global digest
-    m = hashlib.md5()
-    data = {"code": PREV_STATE}
-    if os.path.isfile(enc_file_name):
-        with open(enc_file_name) as f:
-            m.update(f.read())
-            if digest != m.digest():
-                digest = m.digest()
-                os.system('./decrypt %s < param/a3.param' % (dev_id))
-                try:
-                    with open(dec_file_name) as ff:
-                        data = json.load(ff)
-                except:
-                    os.system('./decrypt %s < param/a3.param' % (glob_id))
-                    try:
-                        with open(dec_file_name) as ff:
-                            data = json.load(ff)
-                    except:
-                        exit("dec.pub failed to decrypt")
-    return data
+# Get ID Name
+try:
+    with open("id.pub") as fn:
+        dev_id = fn.read()
+except:
+    exit("id.pub was not found")
+
+# Get Global ID
+try:
+    with open("global.pub") as fn:
+        glob_id = fn.read()
+except:
+    exit("global.pub was not found")
+
 
 while run:
     data  = get_state_from_enc_pub()
@@ -262,7 +327,7 @@ while run:
         PREV_STATE = DIRECT
         direct(data)
         PREV_STATE = RELEASE
-    elif code == RELEASE: 
+    elif code == RELEASE:
         PREV_STATE = RELEASE
         release(dev_id, flight_plan[flight_stop])
     elif code == SEND:
