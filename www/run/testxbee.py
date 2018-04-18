@@ -101,7 +101,7 @@ def get_state_from_enc_pub():
     global digest
     m = hashlib.md5()
     data = {"code": IDLE}
-    msg = 'd' 
+    msg = 'd'
     if not XBEE.get('session').isMailboxEmpty():
         print "\t\tYou have mail!"
         msg = XBEE.get('session').readMessage().get('rx')
@@ -134,7 +134,7 @@ def broadcast_enc_pub(dest=None, broadcast=False, data=None):
         print dest
         dest_addr = binascii.unhexlify(XBEE.get('addr'))
         XBEE.get('session').sendData(dest_addr, hdata)
-    else: 
+    else:
         print "Failed to send"
         #exit("Failed to send")
 
@@ -145,7 +145,7 @@ def send_ping():
     global ping
     ping = False
     coor = {"lat": 12, "lng":34}
-    m = {"code": "luis is here", 
+    m = {"code": "luis is here",
             "id": dev_id,
             "addr":XBEE.get('addr'),
             "route":1,
@@ -179,7 +179,7 @@ try:
         data = get_state_from_enc_pub()
         code = data.get('code')
         debug = data.get('debug', False)
-        
+
         if code == IDLE:
             print "\tIDLE"
             idle()
