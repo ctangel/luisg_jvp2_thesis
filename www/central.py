@@ -95,13 +95,13 @@ def register():
   if deviceName == "central":
       devicePath = './run'
   else:
-    devicePath = '../devices/%s/%s' % (deviceType, deviceName)    
-  
+    devicePath = '../devices/%s/%s' % (deviceType, deviceName)
+
   if deviceName in os.listdir("../devices/Drone"):
     return '400'
   if deviceName in os.listdir("../devices/Base"):
     return '400'
-    
+
   # Create Folder in /devices/{deviceType}/{deviceName}
   os.system("mkdir %s" % (devicePath))
   os.system("mkdir %s/param" % (devicePath))
@@ -121,7 +121,7 @@ def register():
   else:
     os.system("cp ../source/rundrone.py %s" % (devicePath))
     os.system("cp ../source/testdrone.py %s" % (devicePath))
-  
+
   # try to send code to pi via scp
   # sshpass -p thesis123 scp -r ../devices/Base/{deviceName} pi%10.0.1.128:/home/pi
   if deviceName != "central":
@@ -148,20 +148,24 @@ def send_fp():
     base = input_json['base']
     CONFIRM_FP = 't'
     bases = {}
-    if os.path.isFile("../run/map.pub"):
+    if os.path.isfile("../run/map.pub"):
         with open("../run/map.pub") as fn:
             bases = json.load(fn)
-    
+
     graph = generate_graph(bases)
     flight_plan = dijkstra(graph, "central", base)
-    # Get flight_plan from base 
+    # Get flight_plan from base
     m = {
-            "code": CONFIRM_FP,
-            "id": drone,
-            "flight_plan": []
+            "code": SEND_FP,
+            "id": "central",
+            "flight_plan": flight_plan,
+            "addrs": addrs,
+            "drone": drone
         }
     try:
-        os.system("cd run && ./encrypt '%s' '%s'  < param/a3.param" % (json.dumps(m), "central"))
+        with open("../run/flight_plan.pub", 'w') as fn:
+            fn.write(json.dumps(m))
+        #os.system("cd run && ./encrypt '%s' '%s'  < param/a3.param" % (json.dumps(m), "central"))
         return '200'
     except:
         return '400'
@@ -171,16 +175,33 @@ def update_network():
     GLOBAL_PING = 'j'
     with open('../run/glob.pub') as fn:
         glob_dev = fn.read()
-    # Get flight_plan from base 
+    # Get flight_plan from base
     m = {"code": GLOBAL_PING}
     #TODO have this wait until it sees the map update
     try:
-        os.system("cd run && ./encrypt '%s' '%s'  < param/a3.param" % (json.dumps(m), glob_dev))
+        with open("../run/update.pub", 'w') as fn:
+            fn.write(json.dumps(m))
+        #os.system("cd run && ./encrypt '%s' '%s'  < param/a3.param" % (json.dumps(m), glob_dev))
         return '200'
     except:
         return '400'
 
+@application.route("/xbee_info", methods=["POST"])
+def xbee_info():
+    h = json.loads(list(request.form)[0])
+    addr = h.get('addr')
+    dev = h.get('dev')
+    data = {}
+    if os.path.isfile("../run/addr.pub"):
+        with open("../run/addr.pub") as fn:
+            data = json.load(fn)
 
+    data[dev] = addr
+    with open("../run/addr.pub", w) as fn:
+        fn.write(json.dumps(data))
+  
+    #TODO Test
+    return '200'
 
 if __name__ == "__main__":
   application.run(host='0.0.0.0')

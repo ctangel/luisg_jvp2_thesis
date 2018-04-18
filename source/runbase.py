@@ -196,6 +196,10 @@ def startXBEE(device):
         device['session'].close()
         return False
 
+# Test Function
+def get_XBEE():
+    return XBEE
+
 def get_state_from_enc_pub():
     global digest
     m = hashlib.md5()
@@ -464,10 +468,12 @@ def send_flight_plan(data):
     m = {
             'code': CONFIRM_FP,
             'flight_plan': data.get('flight_plan')
+            'addrs': data.get('addrs')
+            'drone': data.get('drone')
         }
-    enc_data = sp.check_output("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')), shell=True)
+    enc_data = sp.check_output("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('drone')), shell=True)
     db(SEND_FP)
-    broadcast_enc_pub(data.get('id'), enc_data)
+    broadcast_enc_pub(data.get('drone'), enc_data)
 
 def request_status():
     global request
@@ -520,6 +526,10 @@ if find_device(XBEE):
 else:
     exit("XBEE not Found")
 
+# Send Xbee info to Central base
+m = {"addr":XBEE.get('addr'), "dev":dev_id}
+sp.call(["curl", "-f", "-s", "localhost:5000/xbee_info", "-X", "POST", "-d", json.dumps(m)], shell=False)
+
 # Start Triggers
 #TODO Turn back one
 #trigger_request()
@@ -540,6 +550,21 @@ while run:
     # Once in while, check try to update base map
     if ping:
         send_ping()
+
+    # Send Flight Plan if available
+    if os.path.isfile("flight_plan.pub"):
+        with open("flight_plan.pub") as fn:
+            fp_data = json.load(fn)
+        send_flight_plan(fp_data)
+        os.remove("flight_plan.pub")
+
+    # Send Global Ping if available
+    if os.path.isfile("update.pub"):
+        with open("update.pub") as fn:
+            fp_data = json.load(fn)
+        send_global_ping()
+        os.remove("update.pub")
+
 
     if code == IDLE:
         idle()

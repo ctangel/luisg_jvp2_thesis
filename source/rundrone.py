@@ -266,7 +266,7 @@ def confirm_flight_plan(data):
     for i, base in eneruate(flight_plan):
         bases[base] = {"addr": addrs[i]}
 
-    #TODO Make sure data has id of central and addrs
+    #TODO Make sure data had addrs
     if flight_plan != None:
         m = {'code': CONFIRM_FP, 'id': dev_id, 'base': flight_plan[flight_stop]}
         enc_data = sp.check_output("./encrypt '%s' %s < param/a3.param" % (json.dumps(m), dev_id), shell=True)
@@ -297,6 +297,10 @@ try:
         glob_id = fn.read()
 except:
     exit("global.pub was not found")
+
+# Send Xbee info to Central base
+m = {"addr":XBEE.get('addr'), "dev":dev_id}
+sp.call(["curl", "-f", "-s", "localhost:5000/xbee_info", "-X", "POST", "-d", json.dumps(m)], shell=False)
 
 
 while run:
