@@ -35,6 +35,7 @@ ABORT           = 'r'
 TAKE_OFF        = 's'
 CONFIRM_FP      = 't'
 REPLY_STATUS    = 'w'
+ACK             = 'y'
 
 # Base Codes
 IDLE            = 'a'
@@ -156,43 +157,38 @@ def get_coordinates():
     pass
 
 def get_state_from_enc_pub():
+    """ Checks if messages exists, if so, then is reads them in """
     global digest
     m = hashlib.md5()
     data = {"code": IDLE}
-    msg = 'd'
+    msg = {}
     if not XBEE.get('session').isMailboxEmpty():
-        print "\t\tYou have mail!"
-        msg = XBEE.get('session').readMessage().get('rx')
+        msg = XBEE.get('session').readMessage()
+        if msg == None:
+            return data
+        msg = msg.get('rx')
         m.update(msg)
         if digest != m.digest():
             digest = m.digest()
-            # Try dev_id
-            print "\t\ttrying id... %s" % msg
-            dec = sp.check_output("./decrypt %s %s < param/a3.param" % (dev_id, msg), shell=True)
             try:
-                data = json.loads(dec)
+                data = json.loads(msg)
             except:
-                # Try glob_id
-                print "\t\ttrying global id... %s" % msg
-                dec = sp.check_output("./decrypt %s %s < param/a3.param" % (glob_id, msg), shell=True)
-                try:
-                    data = json.loads(dec)
-                except:
-                    print "\t\tpass"
-                    pass
+                print "\t\tpass"
+                pass
     return data
 
 def broadcast_enc_pub(dest=None, data=None):
-    print "Broadcasting..."
-    print data
-    if dest == None:
+    if dest == glob_id:
+        #TODO Add glob_id as input to broadcastData
         XBEE.get('session').broadcastData(data)
     elif bases.get(dest) != None:
-        dest_addr = base.get(dest).get('addr')
-        XBEE.get('session').sendData(dest_addr, hdata)
+        XBEE.get('session').sendData(bases.get(dest).get('addr'), data, None, dest)
+    elif drones.get(dest) != None:
+        XBEE.get('session').sendData(drones.get(dest).get('addr'), data, None, dest)
     else:
         print "Failed to send"
         #exit("Failed to send")
+
 
 #
 #   State Machtine
@@ -200,16 +196,14 @@ def broadcast_enc_pub(dest=None, data=None):
 
 def broadcast_to_base(baseID):
     m = {'code': SEND_CONFIRM, 'seq':'1', 'id': dev_id, "addr":XBEE.get('addr')}
-    enc_data = sp.check_output("./encrypt '%s' %s < param/a3.param" % (json.dumps(m), baseID), shell=True)
     db(CONFIRM)
-    broadcast_enc_pub(baseID, enc_data)
+    broadcast_enc_pub(baseID, json.dumps(m))
 
 def ask_for_direction(baseID, nextBaseID):
     # request base for direction to next base
     m = {'code': SEND_DIRECT, 'base': nextBaseID, 'id': dev_id}
-    enc_data = sp.check_output("./encrypt '%s' %s < param/a3.param" % (json.dumps(m), baseID), shell=True)
     db(ASK_DIRECT)
-    broadcast_enc_pub(baseID, enc_data)
+    broadcast_enc_pub(baseID, json.dump(m))
 
 def direct(data):
     global target
@@ -224,15 +218,13 @@ def direct(data):
 
 def release(baseID):
     m = {'code': RELEASE_MSG, 'id': dev_id}
-    enc_data = sp.check_output("./encrypt '%s' %s < param/a3.param" % (json.dumps(m), baseID), shell=True)
     db(RELEASE)
-    broadcast_enc_pub(bases.get(baseID).get('addr'), enc_data)
+    broadcast_enc_pub(baseID, json.dumps(m))
 
 def send_msg(data, baseID, nextBaseID):
     m = {'code': FORWARD,'id':dev_id, 'base': baseID, "msg": data.get('msg')}
-    enc_data = sp.system("./encrypt '%s' %s < param/a3.param" % (json.dumps(m), nextBaseID), shell=True)
     db(SEND)
-    broadcast_enc_pub(newBaseID, enc_data)
+    broadcast_enc_pub(newBaseID, json.dumps(m))
 
 def move_to_base(data):
     # Use Target
@@ -250,9 +242,8 @@ def abort(data):
 def reply_status(baseID, nextBaseID):
     coor = get_coordinates()
     m = {'code': CHECK_REQUEST, 'id': dev_id, 'base':nextBaseID, 'lat':coor.get('lat'), 'lng': coor.get('lng')}
-    enc_data = sp.check_output("./encrypt '%s' %s < param/a3.param" % (json.dumps(m), baseID), shell=True)
     db(REPLY_STATUS)
-    broadcast_enc_pub(baseID, enc_data)
+    broadcast_enc_pub(baseID, json.dumps(m))
 
 
 def confirm_flight_plan(data):
@@ -266,12 +257,10 @@ def confirm_flight_plan(data):
     for i, base in eneruate(flight_plan):
         bases[base] = {"addr": addrs[i]}
 
-    #TODO Make sure data had addrs
     if flight_plan != None:
         m = {'code': CONFIRM_FP, 'id': dev_id, 'base': flight_plan[flight_stop]}
-        enc_data = sp.check_output("./encrypt '%s' %s < param/a3.param" % (json.dumps(m), dev_id), shell=True)
         db(CONFIRM_FP)
-        broadcast_enc_pub(data.get('id'), enc_data)
+        broadcast_enc_pub(data.get('id'), json.dumps(m))
 
 def take_off(data):
     target["lat"] = data.get('lat')
@@ -302,52 +291,55 @@ except:
 m = {"addr":XBEE.get('addr'), "dev":dev_id}
 sp.call(["curl", "-f", "-s", "localhost:5000/xbee_info", "-X", "POST", "-d", json.dumps(m)], shell=False)
 
+try:
+    while run:
+        data  = get_state_from_enc_pub()
+        code  = data.get('code')
+        debug = data.get('debug', False)
 
-while run:
-    data  = get_state_from_enc_pub()
-    code  = data.get('code')
-    debug = data.get('debug', False)
+        if len(flight_plan) == 0 and not code == SEND_FP:
+            code = IDLE
 
-    if len(flight_plan) == 0 and not code == SEND_FP:
-        code = IDLE
-
-    if code == IDLE:
-        PREV_STATE = IDLE
-        idle()
-    elif code == CONFIRM_FP:
-        PREV_STATE = CONFIRM_FP
-        confirm_flight_plan(data)
-    elif code == TAKE_OFF:
-        PREV_STATE = TAKE_OFF
-        take_off()
-        PREV_STATE = MOVE
-    elif code == CONFIRM:
-        PREV_STATE = CONFIRM
-        broadcast_to_base(dev_id, flight_plan[flight_stop])
-    elif code == ASK_DIRECT:
-        PREV_STATE = ASK_DIRECT
-        ask_for_direction(flight_plan[flight_stop], flight_plan[flight_stop+1])
-    elif code == DIRECT:
-        PREV_STATE = DIRECT
-        direct(data)
-        PREV_STATE = RELEASE
-    elif code == RELEASE:
-        PREV_STATE = RELEASE
-        release(dev_id, flight_plan[flight_stop])
-    elif code == SEND:
-        PREV_STATE = SEND
-        send_msg(data, flight_plan[flight_stop], flight_plan[flight_stop+1])
-    elif code == MOVE:
-        PREV_STATE = MOVE
-        move_to_base(data)
-        flight_stop += 1
-        PREV_STATE = CONFIRM
-    elif code == ABORT:
-        PREV_STATE = ABORT
-        abort(data)
-        flight_stop -= 1
-    elif code == REPLY_STATUS:
-        PREV_STATE = IDLE
-        reply_status(dev_id, flight_plan[flight_stop])
-    else:
-        print 'error: add code to throw an exception'
+        if code == IDLE:
+            PREV_STATE = IDLE
+            idle()
+        elif code == CONFIRM_FP:
+            PREV_STATE = CONFIRM_FP
+            confirm_flight_plan(data)
+        elif code == TAKE_OFF:
+            PREV_STATE = TAKE_OFF
+            take_off()
+            PREV_STATE = MOVE
+        elif code == CONFIRM:
+            PREV_STATE = CONFIRM
+            broadcast_to_base(dev_id, flight_plan[flight_stop])
+        elif code == ASK_DIRECT:
+            PREV_STATE = ASK_DIRECT
+            ask_for_direction(flight_plan[flight_stop], flight_plan[flight_stop+1])
+        elif code == DIRECT:
+            PREV_STATE = DIRECT
+            direct(data)
+            PREV_STATE = RELEASE
+        elif code == RELEASE:
+            PREV_STATE = RELEASE
+            release(dev_id, flight_plan[flight_stop])
+        elif code == SEND:
+            PREV_STATE = SEND
+            send_msg(data, flight_plan[flight_stop], flight_plan[flight_stop+1])
+        elif code == MOVE:
+            PREV_STATE = MOVE
+            move_to_base(data)
+            flight_stop += 1
+            PREV_STATE = CONFIRM
+        elif code == ABORT:
+            PREV_STATE = ABORT
+            abort(data)
+            flight_stop -= 1
+        elif code == REPLY_STATUS:
+            PREV_STATE = IDLE
+            reply_status(dev_id, flight_plan[flight_stop])
+        else:
+            print 'error: add code to throw an exception'
+except(KeyboardInterrupt):
+    XBEE.get('session').close()
+    exit()

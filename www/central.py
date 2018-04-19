@@ -148,12 +148,17 @@ def send_fp():
     base = input_json['base']
     CONFIRM_FP = 't'
     bases = {}
-    if os.path.isfile("../run/map.pub"):
-        with open("../run/map.pub") as fn:
+    if os.path.isfile("run/map.pub"):
+        with open("run/map.pub") as fn:
             bases = json.load(fn)
-
+    
     graph = generate_graph(bases)
     flight_plan = dijkstra(graph, "central", base)
+    with open("run/addr.pub") as fn:
+        addr_data = json.load(fn)
+    addrs = []
+    for stop in flight_plan:
+        addrs.append(addr_data.get(stop))
     # Get flight_plan from base
     m = {
             "code": SEND_FP,
@@ -163,7 +168,7 @@ def send_fp():
             "drone": drone
         }
     try:
-        with open("../run/flight_plan.pub", 'w') as fn:
+        with open("run/flight_plan.pub", 'w') as fn:
             fn.write(json.dumps(m))
         #os.system("cd run && ./encrypt '%s' '%s'  < param/a3.param" % (json.dumps(m), "central"))
         return '200'
@@ -173,13 +178,13 @@ def send_fp():
 @application.route("/update_network", methods=["POST"])
 def update_network():
     GLOBAL_PING = 'j'
-    with open('../run/glob.pub') as fn:
+    with open('run/glob.pub') as fn:
         glob_dev = fn.read()
     # Get flight_plan from base
     m = {"code": GLOBAL_PING}
     #TODO have this wait until it sees the map update
     try:
-        with open("../run/update.pub", 'w') as fn:
+        with open("run/update.pub", 'w') as fn:
             fn.write(json.dumps(m))
         #os.system("cd run && ./encrypt '%s' '%s'  < param/a3.param" % (json.dumps(m), glob_dev))
         return '200'
@@ -192,12 +197,12 @@ def xbee_info():
     addr = h.get('addr')
     dev = h.get('dev')
     data = {}
-    if os.path.isfile("../run/addr.pub"):
-        with open("../run/addr.pub") as fn:
+    if os.path.isfile("run/addr.pub"):
+        with open("run/addr.pub") as fn:
             data = json.load(fn)
 
     data[dev] = addr
-    with open("../run/addr.pub", w) as fn:
+    with open("run/addr.pub", 'w') as fn:
         fn.write(json.dumps(data))
   
     #TODO Test

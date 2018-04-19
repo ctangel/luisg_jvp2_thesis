@@ -50,6 +50,7 @@ ABORT           = 'r'
 TAKE_OFF        = 's'
 CONFIRM_FP      = 't'
 REPLY_STATUS    = 'w'
+ACK             = 'y'
 
 # Global Variables
 db_file_name    = 'deb.pub'
@@ -196,46 +197,35 @@ def startXBEE(device):
         device['session'].close()
         return False
 
-# Test Function
-def get_XBEE():
-    return XBEE
-
 def get_state_from_enc_pub():
+    """ Checks if messages exists, if so, then is reads them in """
     global digest
     m = hashlib.md5()
     data = {"code": IDLE}
-    msg = 'd'
+    msg = {}
     if not XBEE.get('session').isMailboxEmpty():
-        print "\t\tYou have mail!"
-        msg = XBEE.get('session').readMessage().get('rx')
+        msg = XBEE.get('session').readMessage()
+        if msg == None:
+            return data
+        msg = msg.get('rx')
         m.update(msg)
         if digest != m.digest():
             digest = m.digest()
-            # Try dev_id
-            print "\t\ttrying id... %s" % msg
-            dec = sp.check_output("./decrypt %s %s < param/a3.param" % (dev_id, msg), shell=True)
             try:
-                data = json.loads(dec)
+                data = json.loads(msg)
             except:
-                # Try glob_id
-                print "\t\ttrying global id... %s" % msg
-                dec = sp.check_output("./decrypt %s %s < param/a3.param" % (glob_id, msg), shell=True)
-                try:
-                    data = json.loads(dec)
-                except:
-                    print "\t\tpass"
-                    pass
+                print "\t\tpass"
+                pass
     return data
 
 def broadcast_enc_pub(dest=None, data=None):
-    print "Broadcasting..."
-    print data
-    if dest == None:
+    if dest == glob_id:
+        #TODO Add glob_id as input to broadcastData
         XBEE.get('session').broadcastData(data)
     elif bases.get(dest) != None:
-        XBEE.get('session').sendData(bases.get(dest).get('addr'), data)
+        XBEE.get('session').sendData(bases.get(dest).get('addr'), data, None, dest)
     elif drones.get(dest) != None:
-        XBEE.get('session').sendData(droens.get(dest).get('addr'), data)
+        XBEE.get('session').sendData(drones.get(dest).get('addr'), data, None, dest)
     else:
         print "Failed to send"
         #exit("Failed to send")
@@ -250,22 +240,18 @@ def idle():
 
 def send_connection_confirmation(data):
     global drones
-    m = {'code': ASK_DIRECT, 'data': 'OK'}
-    enc_data = sp.check_output("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')), shell=True)
+    m = {'code': ASK_DIRECT, 'id': dev_id, 'data': 'OK'}
     if data.get('id') not in drones:
         drones[data.get('id')] = {"addr": binascii.unhexlify(data.get('addr'))}
     db(SEND_CONFIRM)
-    broadcast_enc_pub(data.get('id'), enc_data)
+    broadcast_enc_pub(data.get('id'), json.dumps(m))
 
 def send_directions(data):
     global bases
     b = bases.get(data.get('base'))
     if b == None:
-        # Handle Situation when base provided is not in recognized by the base
-        m = {
-                'code': ABORT
-            }
-        pass
+        #TODO Handle Situation when base provided is not in recognized by the base
+        m = {'code': ABORT, "id": dev_id}
     else:
         # Find open path
         path = None
@@ -295,26 +281,22 @@ def send_directions(data):
         m = {
                 'code': DIRECT,
                 'waymarks': waymarks,
+                'id': dev_id,
                 'lng': bases.get(data.get('base')).get('lng'),
                 'lat': bases.get(data.get('base')).get('lat'),
-                "alt": dev_alt + (bases[data.get('base')].get('out') * base_alt)
+                'alt': dev_alt + (bases[data.get('base')].get('out') * base_alt)
             }
-    enc_data = sp.check_output("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')), shell=True)
     db(SEND_DIRECT)
-    broadcast_enc_pub(data.get('id'), enc_data)
+    broadcast_enc_pub(data.get('id'), json.dumps(m))
 
 def send_release_msg(data):
     global msgs
-    m = {
-            'code': SEND,
-            'msg': 'asdef'
-        }
+    m = {'code': SEND, 'msg': 'asdef', "id": dev_id}
     chars = string.ascii_uppercase + string.digits
     m['msg'] = ''.join(random.choice(chars) for _ in range(12))
     msgs[data.get('id')] = m.get('msg')
-    enc_data = sp.check_output("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')), shell=True)
     db(RELEASE_MSG)
-    broadcast_enc_pub(data.get('id'), enc_data)
+    broadcast_enc_pub(data.get('id'), json.dumps(m))
 
 def forward_release_msg(data):
     m = {
@@ -324,7 +306,7 @@ def forward_release_msg(data):
             'base': dev_id
         }
     enc_data = sp.check_output("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('base')), shell=True)
-    db(FORWARD)
+    db(
     broadcast_enc_pub(data.get('base'), enc_data)
 
 def send_release_acceptance(data):
@@ -342,7 +324,7 @@ def send_release_acceptance(data):
     if data.get('id') in drones:
         del drones[data.get('id')]
 
-def send_ping(data):
+def send_ping():
     global ping
     ping = False
     coor = {"lat": 12, "lng":34}
@@ -362,9 +344,8 @@ def send_ping(data):
                 del bases[b]
             else:
                 bases[b]['check'] = bases[b]['check'] - 1
-    #m = {"code": PING}
-    enc_data = sp.check_output("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), glob_id), shell=True)
-    broadcast_enc_pub(None, enc_data)
+    #TODO Enable Chunking of Broadcast Messages
+    broadcast_enc_pub(None, json.dumps(m), glob_id)
 
 def send_reply_ping(data):
     coor = get_coordinates()
@@ -383,9 +364,15 @@ def send_reply_ping(data):
                         "3": None
                     }
             }
-        m = {'code': UPDATE, 'id': dev_id, "addr":XBEE.get('addr'), "lat": coor.get('lat'), "lng": coor.get('lng'), "alt":coor.get('alt'), "route":2}
-        enc_data = sp.check_output("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')), shell=True)
-        broadcast_enc_pub(data.get('id'), enc_data)
+        m = {
+                'code': UPDATE,
+                'id': dev_id,
+                "addr":XBEE.get('addr'),
+                "lat": coor.get('lat'),
+                "lng": coor.get('lng'),
+                "alt":coor.get('alt'),"route":2
+            }
+        broadcast_enc_pub(data.get('id'), json.dumps(m))
     db(REPLY_PING)
 
 def update_map(data):
@@ -416,9 +403,8 @@ def update_map(data):
 
 def send_global_ping():
     m = {'code': PROPOGATE, 'og':dev_id, 'id': dev_id, "data":{}, "q": [], "t": [dev_id]}
-    enc_data = sp.check_output("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), glob_id), shell=True)
     db(GLOBAL_PING)
-    broadcast_enc_pub(None, enc_data)
+    broadcast_enc_pub(glob_id, json.dumps(m))
 
 def send_propogate(data):
     ID = data.get('id')
@@ -437,16 +423,17 @@ def send_propogate(data):
     if bases.get(q[0]) == None:
         i = t.pop()
         m['t'] = t
-        enc_data = sp.check_output("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), i), shell=True)
-    else:
+        recipient = i
+     else:
         t.append(dev_id)
         m['q'] = q[1:]
         m['t'] = t
-        enc_data = sp.check_output("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), q[0]), shell=True)
-
+        recipient = q[0]
+    
     db(PROPOGATE)
     if not dev_id == data.get('og'):
-        broadcast_enc_pub(None, enc_data)
+        #TODO Could fail, may need glob_id instead of recipient
+        broadcast_enc_pub(recipient, json.dumps(m))
     else:
         d[dev_id] = {"lat": coor.get('lat'), "lng": coor.get('lng'), "alt":coor.get('alt'), "links":bases.keys()}
         with open('map.pub', 'w') as fn:
@@ -457,23 +444,24 @@ def start_take_off(data):
             'code': TAKE_OFF,
             'lat': bases.get(data.get('base')).get('lat'),
             "lng": bases.get(data.get('base')).get('lat'),
-            "alt": dev_alt + (bases[data.get('base')].get('out') * base_alt)
+            "alt": dev_alt + (bases[data.get('base')].get('out') * base_alt),
+            'id': dev_id
         }
     #TODO add drone to internal memory
     #TODO could benefit from send_direct code for horizontal laning
-    enc_data = sp.check_output("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')), shell=True)
     db(START_TAKE_OFF)
+    broadcast_enc_pub(data.get('id'), json.dumps(m))
 
 def send_flight_plan(data):
     m = {
             'code': CONFIRM_FP,
-            'flight_plan': data.get('flight_plan')
-            'addrs': data.get('addrs')
-            'drone': data.get('drone')
+            'flight_plan': data.get('flight_plan'),
+            'addrs': data.get('addrs'),
+            'drone': data.get('drone'),
+            'id': dev_id
         }
-    enc_data = sp.check_output("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('drone')), shell=True)
     db(SEND_FP)
-    broadcast_enc_pub(data.get('drone'), enc_data)
+    broadcast_enc_pub(data.get('drone'), json.dumps(m))
 
 def request_status():
     global request
@@ -482,8 +470,7 @@ def request_status():
             'code': REPLY_STATUS,
             'id': dev_id
             }
-        enc_data = sp.check_output("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), drone), shell=True)
-        broadcast_enc_pub(drone, enc_data)
+        broadcast_enc_pub(drone, json.dumps(m))
     request = False
 
 def check_status(data):
@@ -537,63 +524,66 @@ sp.call(["curl", "-f", "-s", "localhost:5000/xbee_info", "-X", "POST", "-d", jso
 
 # On bootup, send Ping
 send_ping()
+try:
+    while run:
+        data = get_state_from_enc_pub()
+        code = data.get('code')
+        debug = data.get('debug', False)
 
-while run:
-    data = get_state_from_enc_pub()
-    code = data.get('code')
-    debug = data.get('debug', False)
+        # Every Once in a while, check in with all drones currentlying moving
+        if request:
+            request_status()
 
-    # Every Once in a while, check in with all drones currentlying moving
-    if request:
-        request_status()
+        # Once in while, check try to update base map
+        if ping:
+            send_ping()
 
-    # Once in while, check try to update base map
-    if ping:
-        send_ping()
+        # Send Flight Plan if available
+        if os.path.isfile("flight_plan.pub"):
+            with open("flight_plan.pub") as fn:
+                fp_data = json.load(fn)
+            send_flight_plan(fp_data)
+            os.remove("flight_plan.pub")
 
-    # Send Flight Plan if available
-    if os.path.isfile("flight_plan.pub"):
-        with open("flight_plan.pub") as fn:
-            fp_data = json.load(fn)
-        send_flight_plan(fp_data)
-        os.remove("flight_plan.pub")
-
-    # Send Global Ping if available
-    if os.path.isfile("update.pub"):
-        with open("update.pub") as fn:
-            fp_data = json.load(fn)
-        send_global_ping()
-        os.remove("update.pub")
+        # Send Global Ping if available
+        if os.path.isfile("update.pub"):
+            with open("update.pub") as fn:
+                fp_data = json.load(fn)
+            send_global_ping()
+            os.remove("update.pub")
 
 
-    if code == IDLE:
-        idle()
-    elif code == SEND_CONFIRM:
-        send_connection_confirmation(data)
-    elif code == SEND_DIRECT:
-        send_directions(data)
-    elif code == RELEASE_MSG:
-        send_release_msg(data)
-    elif code == FORWARD:
-        forward_release_msg(data)
-    elif code == RELEASE_ACC:
-        send_release_acceptance(data)
-    elif code == PING:
-        send_ping()
-    elif code == REPLY_PING:
-        send_reply_ping(data)
-    elif code == UPDATE:
-        update_map(data)
-    elif code == GLOBAL_PING:
-        send_global_ping()
-    elif code == PROPOGATE:
-        send_propogate(data)
-    elif code == START_TAKE_OFF:
-        start_take_off(data)
-    elif code == SEND_FP:
-        send_flight_plan(data)
-    elif code == CHECK_STATUS:
-        check_status(data)
-    else:
-        pass
-    time.sleep(1)
+        if code == IDLE:
+            idle()
+        elif code == SEND_CONFIRM:
+            send_connection_confirmation(data)
+        elif code == SEND_DIRECT:
+            send_directions(data)
+        elif code == RELEASE_MSG:
+            send_release_msg(data)
+        elif code == FORWARD:
+            forward_release_msg(data)
+        elif code == RELEASE_ACC:
+            send_release_acceptance(data)
+        elif code == PING:
+            send_ping()
+        elif code == REPLY_PING:
+            send_reply_ping(data)
+        elif code == UPDATE:
+            update_map(data)
+        elif code == GLOBAL_PING:
+            send_global_ping()
+        elif code == PROPOGATE:
+            send_propogate(data)
+        elif code == START_TAKE_OFF:
+            start_take_off(data)
+        elif code == SEND_FP:
+            send_flight_plan(data)
+        elif code == CHECK_STATUS:
+            check_status(data)
+        else:
+            pass
+        time.sleep(1)
+except(KeyboardInterrupt):
+    XBEE.get('session').close()
+    exit()
