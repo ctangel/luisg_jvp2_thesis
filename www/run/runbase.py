@@ -50,6 +50,7 @@ ABORT           = 'r'
 TAKE_OFF        = 's'
 CONFIRM_FP      = 't'
 REPLY_STATUS    = 'w'
+ACK             = 'y'
 
 # Global Variables
 db_file_name    = 'deb.pub'
@@ -196,10 +197,6 @@ def startXBEE(device):
         device['session'].close()
         return False
 
-# Test Function
-def get_XBEE():
-    return XBEE
-
 def get_state_from_enc_pub():
     """ Checks if messages exists, if so, then is reads them in """
     global digest
@@ -220,7 +217,6 @@ def get_state_from_enc_pub():
                 print "\t\tpass"
                 pass
     return data
-
 
 def broadcast_enc_pub(dest=None, data=None):
     if dest == glob_id:
@@ -309,9 +305,8 @@ def forward_release_msg(data):
             'id': data.get('id'),
             'base': dev_id
         }
-    enc_data = sp.check_output("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('base')), shell=True)
-    db(
-    broadcast_enc_pub(data.get('base'), enc_data)
+    db(FOWARD)
+    broadcast_enc_pub(data.get('base'), json.dumps(m))
 
 def send_release_acceptance(data):
     global drones
@@ -319,12 +314,11 @@ def send_release_acceptance(data):
     m = {'code': MOVE}
     if data.get('msg') != msgs.get(data.get('id')):
         m['msg'] = 'FAILED'
-    enc_data = sp.check_output("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')), shell=True)
     for p in bases[data.get('base')].get('paths'):
         if bases[data.get('base')].get('paths').get(p) == data.get('id'):
             bases[data.get('base')]['paths'][p] = None
     db(RELEASE_ACC)
-    broadcast_enc_pub(data.get('id'), enc_data)
+    broadcast_enc_pub(data.get('id'), json.dumps(m))
     if data.get('id') in drones:
         del drones[data.get('id')]
 
@@ -428,7 +422,7 @@ def send_propogate(data):
         i = t.pop()
         m['t'] = t
         recipient = i
-     else:
+    else:
         t.append(dev_id)
         m['q'] = q[1:]
         m['t'] = t
