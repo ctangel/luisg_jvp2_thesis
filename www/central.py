@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, url_for, jsonify
-import os
+import os, math
 import subprocess as sp
 import json
 application = Flask(__name__)
@@ -8,8 +8,11 @@ application = Flask(__name__)
 def cal_distance(x1, y1, x2, y2):
     return math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
 
-def generate_graph(mapa):
+def generate_graph(raw_map):
     graph = {}
+    mapa = {}
+    for base in raw_map:
+        mapa[base.get('base')] = base
     for s in mapa:
         graph[s] = {}
         s1 = mapa.get(s).get("lat")
@@ -139,7 +142,7 @@ def send_fp():
     input_json = request.form
     drone = input_json['drone']
     base = input_json['base']
-    CONFIRM_FP = 't'
+    SEND_FP = 'v'
     bases = {}
     if os.path.isfile("run/map.pub"):
         with open("run/map.pub") as fn:
@@ -157,8 +160,10 @@ def send_fp():
             "id": "central",
             "flight_plan": flight_plan,
             "addrs": addrs,
-            "drone": drone
+            "drone": drone,
+            "addr": addr_data.get(drone)
         }
+    print m
     try:
         with open("run/flight_plan.pub", 'w') as fn:
             fn.write(json.dumps(m))
@@ -177,6 +182,17 @@ def update_network():
     try:
         with open("run/update.pub", 'w') as fn:
             fn.write(json.dumps(m))
+        data = None
+        if os.path.isfile("run/map.pub"):
+            with open("run/map.pub") as fn:
+                data = fn.read()
+        #while True:
+        #    if os.path.isfile('run/map.pub'):
+        #        with open("run/map.pub") as fn:
+        #            newdata = fn.read()
+        #        if data != newdata:
+        #            break
+        #        #TODO test, will not return and load page until update is complete
         return '200'
     except:
         return '400'
@@ -187,6 +203,8 @@ def xbee_info():
     addr = h.get('addr')
     dev = h.get('dev')
     data = {}
+    print addr
+    print dev
     if os.path.isfile("run/addr.pub"):
         with open("run/addr.pub") as fn:
             data = json.load(fn)

@@ -17,9 +17,7 @@ import subprocess as sp
 import threading
 import string
 import math
-import binascii
 import time
-import gps
 import serial.tools.list_ports
 import Comms
 from dronekit import connect, VehicleMode, LocationGlobal
@@ -75,9 +73,9 @@ target          = {"lat":None, "lng":None, "alt":None}
 # Pixhawk Device Information
 PIXHAWK = {
     "baud": 115200,
-    "vid": "26ac", # The Vendor ID of the Pixhawk Flight Controller
-    "pid": "0011", # The Product ID of the Pixhawk Flight Contorller
-    "port": None
+    "vid": ["26ac"], # The Vendor ID of the Pixhawk Flight Controller
+    "pid": ["0011"], # The Product ID of the Pixhawk Flight Contorller
+    "port": None,
     "session": None
 }
 
@@ -188,7 +186,8 @@ def ask_for_direction(baseID, nextBaseID):
 
 def direct(data):
     #checkout send_directions() in runbase.py
-    vehicle = PIXHAWK['session'], global target
+    global target
+    vehicle = PIXHAWK['session']
     target["waymarks"] = data.get('waymarks')
     target["alt"] = data.get('alt') #NOTE: Altitude will never change with waymarks
     db(DIRECT)
@@ -208,7 +207,7 @@ def direct(data):
         cmds.add(cmd)
     cmds.upload()
     vehicle.mode = VehicleMode("GUIDED")
-        """
+    """
             msg = vehicle.message_factory.set_position_target_global_int_encode(
             0,       # time_boot_ms (not used)
             0, 0,    # target system, target component
@@ -224,7 +223,7 @@ def direct(data):
             0, 0)    # yaw, yaw_rate (not supported yet, ignored in GCS_Mavlink)
             # send command to vehicle
             vehicle.send_mavlink(msg)
-            """
+    """
     """
         waymark = [{"lat":b.get('lat'), "lng": b.get('lng')}]
     """
@@ -350,10 +349,6 @@ try:
 except:
     exit("global.pub was not found")
 
-# Send Xbee info to Central base
-m = {"addr":XBEE.get('addr'), "dev":dev_id}
-sp.call(["curl", "-f", "-s", "localhost:5000/xbee_info", "-X", "POST", "-d", json.dumps(m)], shell=False)
-
 # Find XBEE
 if find_device(XBEE):
     if not startXBEE(XBEE):
@@ -361,11 +356,18 @@ if find_device(XBEE):
 else:
     exit("XBEE not Found")
 
-if find_device(PIXHAWK):
-    if not startPIXHAWK(PIXHAWK):
-        exit("Pixhawk Failed to Connect")
-else:
-    exit("PIXHAWK not Found")
+# Send Xbee info to Central base
+m = {"addr":XBEE.get('addr'), "dev":dev_id}
+sp.call(["curl", "-f", "-s", "10.0.1.72:5000/xbee_info", "-X", "POST", "-d", json.dumps(m)], shell=False)
+
+
+#TODO Uncomment once ready to fly
+#if find_device(PIXHAWK):
+#    if not startPIXHAWK(PIXHAWK):
+#        exit("Pixhawk Failed to Connect")
+#else:
+#    XBEE.get('session').close()
+#    exit("PIXHAWK not Found")
 
 try:
     while run:
@@ -377,45 +379,57 @@ try:
             code = IDLE
 
         if code == IDLE:
+            print "IDLE"
             PREV_STATE = IDLE
             idle()
         elif code == CONFIRM_FP:
+            print "CONFIRM_FP"
             PREV_STATE = CONFIRM_FP
             confirm_flight_plan(data)
         elif code == TAKE_OFF:
+            print "TAKE_OFF"
             PREV_STATE = TAKE_OFF
             take_off()
             PREV_STATE = MOVE
         elif code == CONFIRM:
+            print "CONFIRM"
             PREV_STATE = CONFIRM
             broadcast_to_base(dev_id, flight_plan[flight_stop])
         elif code == ASK_DIRECT:
+            print "ASK_DIRECT"
             PREV_STATE = ASK_DIRECT
             ask_for_direction(flight_plan[flight_stop], flight_plan[flight_stop+1])
         elif code == DIRECT:
+            print "DIRECT"
             PREV_STATE = DIRECT
             direct(data)
             PREV_STATE = RELEASE
         elif code == RELEASE:
+            print "RELEASE"
             PREV_STATE = RELEASE
             release(dev_id, flight_plan[flight_stop])
         elif code == SEND:
+            print "SEND"
             PREV_STATE = SEND
             send_msg(data, flight_plan[flight_stop], flight_plan[flight_stop+1])
         elif code == MOVE:
+            print "MOVE"
             PREV_STATE = MOVE
             move_to_base(data)
             flight_stop += 1
             PREV_STATE = CONFIRM
         elif code == ABORT:
+            print "ABORT"
             PREV_STATE = ABORT
             abort(data)
             flight_stop -= 1
         elif code == REPLY_STATUS:
+            print "REPLY_STATUS"
             PREV_STATE = IDLE
             reply_status(dev_id, flight_plan[flight_stop])
         else:
             print 'error: add code to throw an exception'
+        time.sleep(1)
 except(KeyboardInterrupt):
     XBEE.get('session').close()
     exit()
