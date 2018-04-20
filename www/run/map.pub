@@ -1,1 +1,1 @@
-{"google": {"lat": null, "lng": null, "alt": null, "links": ["waymark", "central"]}, "central": {"lat": null, "lng": null, "alt": null, "links": ["waymark", "google"]}}
+[{"lat": 40.35054782521314, "lng": -74.65133031053387, "base": "twitter", "alt": null, "links": ["central"]}, {"lat": 40.3470190911147, "lng": -74.66142010205618, "base": "central", "alt": null, "links": ["twitter"]}]
