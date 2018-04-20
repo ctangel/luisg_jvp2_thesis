@@ -68,13 +68,6 @@ def dijkstra(graph,src,dest,visited=[],distances={},predecessors={}):
 @application.route("/")
 def hello():
   # Check if runbase.py is running, if no, then run
-  output  = sp.check_output("ps", shell=True)
-  running = False
-  for i in output.split("\n"):
-      if "runbase.py" in i:
-          running = True
-  if not running:
-      sp.Popen("cd run && python runbase.py", shell=True)
   bases = []
   if os.path.isfile("run/map.pub"):
       with open("run/map.pub") as fn:
@@ -204,4 +197,12 @@ def xbee_info():
     return '200'
 
 if __name__ == "__main__":
-  application.run(host='0.0.0.0')
+    #output  = sp.check_output("ps", shell=True)
+    #running = False
+    #for i in output.split("\n"):
+    #    if "runbase.py" in i:
+    #        running = True
+    #if not running:
+    #  sp.Popen("cd run && python runbase.py", shell=True)
+ 
+    application.run(host='0.0.0.0', threaded=True)

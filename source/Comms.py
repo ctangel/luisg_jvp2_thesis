@@ -119,16 +119,13 @@ class Delivery():
 
     def unpackage(self, data, source, devID):
         assert(data is not None and source is not None)
-        print "\tunpacking..."
         dec_msg = self.decrypt(data, devID)
         try:
-            print "\tchecking for ack msg...",
             w = json.loads(dec_msg)
             if w.get('code') == 'y':
                 del self.destinations[source][w.get("msgID")]
             return (w.get('msgID'), None)
         except:
-            print "nope\n..."
             try:
                 i = dec_msg[0] #Message Identifier
                 m = int(dec_msg[2]) #Number of partial messages for completed message
@@ -148,7 +145,6 @@ class Delivery():
                     return (i, complete_msg) #TODO: recipient now needs to send a confimration
                 return (None, None)
             except:
-                print "you royally messed up..."
                 return (None, None)
 
     def __compileMessage(self, msgs):
@@ -299,7 +295,12 @@ class Comms():
             #FIXME  Code above trys to decrypt with dev_id, if it fails, then it attemps to decrypt with global_id
             #       Could cause problems when mutliple messages are being sent over the network
             if data != None:
-                senderID = json.loads(data).get('id')
+                try:
+                    senderID = json.loads(data).get('id')
+                except:
+                    print msgID
+                    print data
+                    return None
                 dest = msg['source_addr_long'] #FIXME: possibly in wrong format (but correct parameter)
                 m = {"code": "y", "msgID": msgID} #FIXME: get a global variable / not hardcoded
                 msg = self.delivery.encrypt(json.dumps(m), senderID)

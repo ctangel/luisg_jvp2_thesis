@@ -1,9 +1,1 @@
-[
-  {"base": "Aa", "lat": 51.5, "lng": -0.03 },
-  {"base": "Bb", "lat": 51.4, "lng": -0.04 },
-  {"base": "Cc", "lat": 51.5, "lng": -0.05 },
-  {"base": "Dd", "lat": 51.3, "lng": -0.06 },
-  {"base": "Ee", "lat": 51.2, "lng": -0.07 },
-  {"base": "Ff", "lat": 51.1, "lng": -0.08 },
-  {"base": "Gg", "lat": 51.0, "lng": -0.09 }
-]
+{"google": {"lat": null, "lng": null, "alt": null, "links": ["waymark", "central"]}, "central": {"lat": null, "lng": null, "alt": null, "links": ["waymark", "google"]}}

@@ -15,7 +15,7 @@ import random
 import string
 import json
 import math
-import geopy
+#import geopy
 import binascii
 import time
 #import gps
@@ -211,17 +211,16 @@ def get_state_from_enc_pub():
         m.update(msg)
         if digest != m.digest():
             digest = m.digest()
-            try:
-                data = json.loads(msg)
-            except:
-                print "\t\tpass"
-                pass
+        try:
+            data = json.loads(msg)
+        except:
+            print "\t\tpass"
+            pass
     return data
 
 def broadcast_enc_pub(dest=None, data=None):
     if dest == glob_id:
-        #TODO Add glob_id as input to broadcastData
-        XBEE.get('session').broadcastData(dest, data)
+        XBEE.get('session').sendData(Comms.Comms.BROADCAST, data, None, dest)
     elif bases.get(dest) != None:
         XBEE.get('session').sendData(bases.get(dest).get('addr'), data, None, dest)
     elif drones.get(dest) != None:
@@ -327,6 +326,7 @@ def send_ping():
     ping = False
     coor = {"lat": 12, "lng":34}
     #coor = get_coordinates()
+    print "\tprepping message..."
     m = {"code": REPLY_PING,
             "id": dev_id,
             "addr":XBEE.get('addr'),
@@ -334,6 +334,7 @@ def send_ping():
             "lat":coor.get('lat'),
             "lng":coor.get('lng'),
             "alt":coor.get('alt')}
+    print "\tchecking base records..."
     for b in bases:
         if bases[b].get("check") == None:
             bases[b]['check'] = 2
@@ -342,11 +343,13 @@ def send_ping():
                 del bases[b]
             else:
                 bases[b]['check'] = bases[b]['check'] - 1
-    #TODO Enable Chunking of Broadcast Messages
+    print "\tbroadcasting..."
     broadcast_enc_pub(glob_id, json.dumps(m))
 
 def send_reply_ping(data):
     coor = get_coordinates()
+    print "\tsaving information..."
+    print bases
     if bases.get(data.get('id')) == None:
         # add to the base with out route 1 and in route 2
         bases[data.get('id')] = {
@@ -362,6 +365,7 @@ def send_reply_ping(data):
                         "3": None
                     }
             }
+        print "\tpreppring message..."
         m = {
                 'code': UPDATE,
                 'id': dev_id,
@@ -370,19 +374,23 @@ def send_reply_ping(data):
                 "lng": coor.get('lng'),
                 "alt":coor.get('alt'),"route":2
             }
+        print bases
+        print "\tsending to %s..." % data.get('id')
         broadcast_enc_pub(data.get('id'), json.dumps(m))
     db(REPLY_PING)
 
 def update_map(data):
     global bases
+    print "\tupdating map..."
     coor = get_coordinates()
+    print bases
     if bases.get(data.get('id')) == None:
         # add to the base with out route 1 and in route 2
         bases[data.get('id')] = {
                 "lat":data.get('lat'),
                 "lng":data.get('lng'),
                 "alt":data.get('alt'),
-                "addr":binascci.unhexlify(data.get('addr')),
+                "addr":binascii.unhexlify(data.get('addr')),
                 "in":2,
                 "out":1,
                 "paths": {
@@ -392,11 +400,10 @@ def update_map(data):
                     }
             }
     # reset
+    print "updated"
     if bases.get(data.get('id')).get('check') != None:
         bases[data.get('id')]['check'] = 2
-        #base[data.get("id")]['lat'] = data.get("lat")
-        #base[data.get("id")]['lng'] = data.get("lng")
-        #base[data.get("id")]['alt'] = data.get("alt")
+    print bases
     db(UPDATE)
 
 def send_global_ping():
@@ -409,20 +416,32 @@ def send_propogate(data):
     d = data.get('data')
     q = data.get('q')
     t = data.get('t')
-
+    print "\tpropogating..."
+    print d
+    print q
+    print t
+    print "\tcycling through keys..."
     for key in bases.keys():
+        print "\t%s..." % key
         if key not in q and key not in t and data.get(key) == None:
             q.append(key)
     coor = get_coordinates()
+    print "\tchecking if dev_id exist...."
     if d.get(dev_id) == None:
+        print "\tit didn't"
         d[dev_id] = {"lat": coor.get('lat'), "lng": coor.get('lng'), "alt":coor.get('alt'), "links":bases.keys()}
 
-    m = {'code': PROPOGATE, 'og':data.get('og'), 'id': dev_id, "data":d, "q": q}
-    if bases.get(q[0]) == None:
+    print "\tprepping message..."
+    m = {'code': PROPOGATE, 'og':data.get('og'), 'id': dev_id, "data":d, "q": q, "t":t}
+    if len(q) == 0:
+        return None
+    elif bases.get(q[0]) == None:
+        print "\toption 1..."
         i = t.pop()
         m['t'] = t
         recipient = i
     else:
+        print "\toption2..."
         t.append(dev_id)
         m['q'] = q[1:]
         m['t'] = t
@@ -430,10 +449,15 @@ def send_propogate(data):
 
     db(PROPOGATE)
     if not dev_id == data.get('og'):
+        print "\tpropogating to %s" % recipient
+        print m
         #TODO Could fail, may need glob_id instead of recipient
-        broadcast_enc_pub(recipient, json.dumps(m))
+        #broadcast_enc_pub(recipient, json.dumps(m))
+        broadcast_enc_pub(glob_id, json.dumps(m))
     else:
+        print "\tBack at OG!"
         d[dev_id] = {"lat": coor.get('lat'), "lng": coor.get('lng'), "alt":coor.get('alt'), "links":bases.keys()}
+        print d
         with open('map.pub', 'w') as fn:
             fn.write(json.dumps(d))
 
@@ -513,7 +537,7 @@ else:
 
 # Send Xbee info to Central base
 m = {"addr":XBEE.get('addr'), "dev":dev_id}
-sp.call(["curl", "-f", "-s", "localhost:5000/xbee_info", "-X", "POST", "-d", json.dumps(m)], shell=False)
+sp.call(["curl", "-f", "-s", "10.0.1.72:5000/xbee_info", "-X", "POST", "-d", json.dumps(m)], shell=False)
 
 # Start Triggers
 #TODO Turn back one
@@ -546,13 +570,16 @@ try:
 
         # Send Global Ping if available
         if os.path.isfile("update.pub"):
+            print "update.pub found!"
             with open("update.pub") as fn:
                 fp_data = json.load(fn)
+            print "GLOBAL_PING"
             send_global_ping()
             os.remove("update.pub")
 
 
         if code == IDLE:
+            print "IDLE"
             idle()
         elif code == SEND_CONFIRM:
             send_connection_confirmation(data)
@@ -565,14 +592,19 @@ try:
         elif code == RELEASE_ACC:
             send_release_acceptance(data)
         elif code == PING:
+            print "PING"
             send_ping()
         elif code == REPLY_PING:
+            print "REPLY_PING"
             send_reply_ping(data)
         elif code == UPDATE:
+            print "UPDATE"
             update_map(data)
         elif code == GLOBAL_PING:
+            print "GLOBAL_PING"
             send_global_ping()
         elif code == PROPOGATE:
+            print "PROPOGATE"
             send_propogate(data)
         elif code == START_TAKE_OFF:
             start_take_off(data)
