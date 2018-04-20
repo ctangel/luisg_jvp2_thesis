@@ -22,8 +22,12 @@ import time
 import gps
 import serial.tools.list_ports
 import Comms
+from dronekit import connect, VehicleMode, LocationGlobal
+from pymavlink import mavutil
+import argparse, sys
 
 
+#TODO: This thing needs to land....
 # CODES
 CONFIRM         = 'l'
 DIRECT          = 'm'
@@ -68,11 +72,12 @@ dev_id          = None
 glob_id         = None
 target          = {"lat":None, "lng":None, "alt":None}
 
-# GPS Device Information
-GPS = {
-    "vid": ["067B","10C4"],
-    "pid": ["2303","EA60"],
-    "port": None,
+# Pixhawk Device Information
+PIXHAWK = {
+    "baud": 115200,
+    "vid": "26ac", # The Vendor ID of the Pixhawk Flight Controller
+    "pid": "0011", # The Product ID of the Pixhawk Flight Contorller
+    "port": None
     "session": None
 }
 
@@ -107,40 +112,12 @@ def db(STATE):
         print STATE
         run = False
 
-def startGPS(device):
-    """ Sets up and establishes a connection with the provided gps device.
-        if connection is successfull, it returns true, else false """
-    # Checking if GPS is Connected to a Socket
+def startPIXHAWK(device):
     try:
-        child = sp.Popen("pgrep -s gpsd", shell=True, stdin=sp.PIPE, stdout=sp.PIPE, stderr=sp.PIPE)
-        output, err = child.communicate()
-        if device['port'] not in output and output != '':
-            # Kills Existing GPS Socket Connection
-            os.system("sudo killall -q gpsd")
-        if device['port'] not in output:
-            # Connect GPS to a Socket
-            os.system("gpsd %s" % (device['port']))
+        device['session'] = connect(device['port'], baud=device['baud'], wait_ready=True)
+        sleep(5)
     except:
-        # GPS Failed to Connect to a socket
         return False
-
-    # Check if GPS session is valid
-    while True:
-        time.sleep(1)
-        try:
-            device['session'] = gps.gps('localhost', '2947')
-            break
-        except:
-            sp.check_all("sudo killall -q gpsd", shell=True)
-            os.system("gpsd %s" % (device['port']))
-    device['session'].stream(gps.WATCH_ENABLE | gps.WATCH_NEWSTYLE)
-    report = device['session'].next()
-
-    # Locking onto GPS
-    while report.get('mode') != 3:
-        time.sleep(1)
-        report = device['session'].next()
-    return True
 
 def startXBEE(device):
     try:
@@ -153,10 +130,12 @@ def startXBEE(device):
         device['session'].close()
         return False
 
-
 def get_coordinates():
-    #TODO
-    pass
+    ans = {}
+    ans['lat'] = PIXHAWK['session'].location.global_frame.lat
+    ans['lng'] = PIXHAWK['session'].location.global_frame.lon
+    ans['alt'] = PIXHAWK['session'].location.global_frame.alt
+    return ans
 
 def get_state_from_enc_pub():
     """ Checks if messages exists, if so, then is reads them in """
@@ -208,15 +187,47 @@ def ask_for_direction(baseID, nextBaseID):
     broadcast_enc_pub(baseID, json.dump(m))
 
 def direct(data):
-    global target
+    #checkout send_directions() in runbase.py
+    vehicle = PIXHAWK['session'], global target
     target["waymarks"] = data.get('waymarks')
-    target["lng"] = data.get('lng')
-    target["lat"] = data.get('lat')
-    target["alt"] = data.get('alt')
+    target["alt"] = data.get('alt') #NOTE: Altitude will never change with waymarks
     db(DIRECT)
     # code to translate coordinates into mechanical movements for the pixhawk
     # ideally the drone moves to the halfway mark to prepare for release()
-    #TODO
+
+    #Remove any previous waypoints
+    cmds = vehicle.commands
+    cmds.clr()
+    cmds.upload()
+
+    for point in target['waymarks'][:-1]:
+        cmd = Command(0,0,0, mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+    0, 0, 0, 0, 0, 0,
+    point.get('lat'), point.get('lon'), target['alt'])
+    #TODO: is this the correct format for waymarks?
+        cmds.add(cmd)
+    cmds.upload()
+    vehicle.mode = VehicleMode("GUIDED")
+        """
+            msg = vehicle.message_factory.set_position_target_global_int_encode(
+            0,       # time_boot_ms (not used)
+            0, 0,    # target system, target component
+            mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT, # frame
+            0b0000111111111000, # type_mask (only speeds enabled)
+            aLocation.lat*1e7, # lat_int - X Position in WGS84 frame in 1e7 * meters
+            aLocation.lon*1e7, # lon_int - Y Position in WGS84 frame in 1e7 * meters
+            aLocation.alt, # alt - Altitude in meters in AMSL altitude, not WGS84 if absolute or relative, above terrain if GLOBAL_TERRAIN_ALT_INT
+            0, # X velocity in NED frame in m/s
+            0, # Y velocity in NED frame in m/s
+            0, # Z velocity in NED frame in m/s
+            0, 0, 0, # afx, afy, afz acceleration (not supported yet, ignored in GCS_Mavlink)
+            0, 0)    # yaw, yaw_rate (not supported yet, ignored in GCS_Mavlink)
+            # send command to vehicle
+            vehicle.send_mavlink(msg)
+            """
+    """
+        waymark = [{"lat":b.get('lat'), "lng": b.get('lng')}]
+    """
 
 def release(baseID):
     m = {'code': RELEASE_MSG, 'id': dev_id}
@@ -229,17 +240,33 @@ def send_msg(data, baseID, nextBaseID):
     broadcast_enc_pub(newBaseID, json.dumps(m))
 
 def move_to_base(data):
-    # Use Target
-    target["waymarks"]
+    # Upload the final waypoint
+    trgt = target["waymarks"][-1]
+    cmd = Command(0,0,0, mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+    0, 0, 0, 0, 0, 0,
+    trgt.get('lat'), trgt.get('lon'), target['alt'])
+    cmds.add(cmd)
+    cmds.upload()
     db(MOVE)
+    PIXHAWK['session'].mode = VehicleMode("GUIDED")
     # code to translate coordinates into mechanical movements for the pixhawk
     # drone moves to the base
-    #TODO
 
 def abort(data):
-    #TODO figure how to about a mission (as in move back to home base)
+
+    #Clear the current flight plan
+    cmds = PIXHAWK['session'].commands
+    cmds.clr()
+    cmds.upload()
+
+    trgt = target['waymarks'][0]
+    cmd = Command(0,0,0, mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+    0, 0, 0, 0, 0, 0,
+    trgt.get('lat'), trgt.get('lon'), target['alt'])
+    cmds.add(cmd)
+    cmds.upload()
+    PIXHAWK['session'].mode = VehicleMode("GUIDED")
     db(ABORT)
-    pass
 
 def reply_status(baseID, nextBaseID):
     coor = get_coordinates()
@@ -264,13 +291,47 @@ def confirm_flight_plan(data):
         db(CONFIRM_FP)
         broadcast_enc_pub(data.get('id'), json.dumps(m))
 
+def arm_and_takeoff(targetAlt):
+    vehicle = PIXHAWK['session']
+
+    #Do not continue until vehicle is ready to accept takeoff and requests
+    while not v.is_armable:
+        time.sleep(3)
+
+    #Clear any previous commands/missions before takeoff
+    cmds = vehicle.commands
+    cmds.download()
+    cmds.wait_ready()
+    vehicle.commands.clr()
+    vehicle.commands.upload()
+
+
+    #Arm the Vehicle
+    vehicle.mode = VehicleMode("GUIDED")
+    vehicle.armed = True
+    while not vehicle.armed:
+        time.sleep(3)
+
+    #Takeoff
+    vehicle.simple_takeoff(targetAlt)
+
+    #Return from function once target altitude is about to be reached
+    while True:
+        if vehicle.location.global_frame.alt >= targetAlt *0.95:
+            break
+        sleep(1)
+
+    return
+
 def take_off(data):
-    target["lat"] = data.get('lat')
-    target["lng"] = data.get('lng')
     target["alt"] = data.get('alt')
-    #TODO Add Take Off Code here
-    #TODO Consider calling move_to_base from here
+    arm_and_takeoff(target["alt"])
     db(TAKE_OFF)
+
+#NOTE: this function is called ONCE THE DRONE HAS REACHED IT'S LANDING LOCATION
+def land():
+    PIXHAWK['session'].mode = VehicleMode("LAND")
+    #NOTE: there is nothing here to ensure that the drone has completed it's landing
 
 def idle():
     db(IDLE)
@@ -299,6 +360,12 @@ if find_device(XBEE):
         exit("XBEE Failed to Connect")
 else:
     exit("XBEE not Found")
+
+if find_device(PIXHAWK):
+    if not startPIXHAWK(PIXHAWK):
+        exit("Pixhawk Failed to Connect")
+else:
+    exit("PIXHAWK not Found")
 
 try:
     while run:
