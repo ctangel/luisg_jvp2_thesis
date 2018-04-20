@@ -75,7 +75,7 @@ GPS = {
     "vid": ["067B","10C4"],
     "pid": ["2303","EA60"],
     "port": None,
-    "session": None
+    "session": `None`
 }
 
 # XBEE Device Information
@@ -282,8 +282,8 @@ def send_directions(data):
                 'code': DIRECT,
                 'waymarks': waymarks,
                 'id': dev_id,
-                'lng': bases.get(data.get('base')).get('lng'),
-                'lat': bases.get(data.get('base')).get('lat'),
+                'lng': bases.get(data.get('base')).get('lng'), #FIXME: get rid of old way
+                'lat': bases.get(data.get('base')).get('lat'), #FIXME: get rid of old way
                 'alt': dev_alt + (bases[data.get('base')].get('out') * base_alt)
             }
     db(SEND_DIRECT)
@@ -427,7 +427,7 @@ def send_propogate(data):
         m['q'] = q[1:]
         m['t'] = t
         recipient = q[0]
-    
+
     db(PROPOGATE)
     if not dev_id == data.get('og'):
         #TODO Could fail, may need glob_id instead of recipient
