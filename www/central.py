@@ -68,16 +68,16 @@ def dijkstra(graph,src,dest,visited=[],distances={},predecessors={}):
 @application.route("/")
 def hello():
   # Check if runbase.py is running, if no, then run
-  #output  = sp.check_output("ps", shell=True)
-  #running = False
-  #for i in output.split("\n"):
-  #    if "runbase.py" in i:
-  #        running = True
-  #if not running:
-  #    sp.Popen("python ../run/runbase.py", shell=True)
+  output  = sp.check_output("ps", shell=True)
+  running = False
+  for i in output.split("\n"):
+      if "runbase.py" in i:
+          running = True
+  if not running:
+      sp.Popen("cd run && python runbase.py", shell=True)
   bases = []
-  if os.path.isfile("../run/map.pub"):
-      with open("../run/map.pub") as fn:
+  if os.path.isfile("run/map.pub"):
+      with open("run/map.pub") as fn:
           bases = json.load(fn)
   #bases = [{"base": "A", "lat": 51.5, "lng": -0.09 },{"base": "B", "lat": 51.6, "lng": -0.09 }]
   return render_template("index.html", markers=json.dumps(bases), deviceList=[f for f in os.listdir('../devices/Base') if not f.startswith('.')], droneList=[f for f in os.listdir('../devices/Drone') if not f.startswith('.')])
@@ -151,7 +151,6 @@ def send_fp():
     if os.path.isfile("run/map.pub"):
         with open("run/map.pub") as fn:
             bases = json.load(fn)
-    
     graph = generate_graph(bases)
     flight_plan = dijkstra(graph, "central", base)
     with open("run/addr.pub") as fn:
@@ -170,7 +169,6 @@ def send_fp():
     try:
         with open("run/flight_plan.pub", 'w') as fn:
             fn.write(json.dumps(m))
-        #os.system("cd run && ./encrypt '%s' '%s'  < param/a3.param" % (json.dumps(m), "central"))
         return '200'
     except:
         return '400'
@@ -178,7 +176,7 @@ def send_fp():
 @application.route("/update_network", methods=["POST"])
 def update_network():
     GLOBAL_PING = 'j'
-    with open('run/glob.pub') as fn:
+    with open('run/global.pub') as fn:
         glob_dev = fn.read()
     # Get flight_plan from base
     m = {"code": GLOBAL_PING}
@@ -186,7 +184,6 @@ def update_network():
     try:
         with open("run/update.pub", 'w') as fn:
             fn.write(json.dumps(m))
-        #os.system("cd run && ./encrypt '%s' '%s'  < param/a3.param" % (json.dumps(m), glob_dev))
         return '200'
     except:
         return '400'
@@ -204,8 +201,6 @@ def xbee_info():
     data[dev] = addr
     with open("run/addr.pub", 'w') as fn:
         fn.write(json.dumps(data))
-  
-    #TODO Test
     return '200'
 
 if __name__ == "__main__":

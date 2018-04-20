@@ -182,7 +182,7 @@ def get_state_from_enc_pub():
 def broadcast_enc_pub(dest=None, data=None):
     if dest == glob_id:
         #TODO Add glob_id as input to broadcastData
-        XBEE.get('session').broadcastData(data)
+        XBEE.get('session').broadcastData(dest, data)
     elif bases.get(dest) != None:
         XBEE.get('session').sendData(bases.get(dest).get('addr'), data, None, dest)
     elif drones.get(dest) != None:

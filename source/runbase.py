@@ -221,7 +221,7 @@ def get_state_from_enc_pub():
 def broadcast_enc_pub(dest=None, data=None):
     if dest == glob_id:
         #TODO Add glob_id as input to broadcastData
-        XBEE.get('session').broadcastData(data)
+        XBEE.get('session').broadcastData(dest, data)
     elif bases.get(dest) != None:
         XBEE.get('session').sendData(bases.get(dest).get('addr'), data, None, dest)
     elif drones.get(dest) != None:
@@ -343,7 +343,7 @@ def send_ping():
             else:
                 bases[b]['check'] = bases[b]['check'] - 1
     #TODO Enable Chunking of Broadcast Messages
-    broadcast_enc_pub(None, json.dumps(m), glob_id)
+    broadcast_enc_pub(glob_id, json.dumps(m))
 
 def send_reply_ping(data):
     coor = get_coordinates()

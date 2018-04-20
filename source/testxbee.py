@@ -155,7 +155,7 @@ def send_ping():
             else:
                 base[b]['check'] = base[b]['check'] - 1
     m = {"code": PING, "id":dev_id}
-    broadcast_enc_pub('\x00\x13\xa2\x00'+'Au\xbc\x91', json.dumps(m), "ruby")
+    broadcast_enc_pub( '\x00\x00\x00\x00\x00\x00\xff\xff', json.dumps(m), glob_id)
 
 if find_device(XBEE):
     if not startXBEE(XBEE):

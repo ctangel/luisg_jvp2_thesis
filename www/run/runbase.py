@@ -18,7 +18,7 @@ import math
 import geopy
 import binascii
 import time
-import gps
+#import gps
 import serial.tools.list_ports
 import subprocess as sp
 import Comms
@@ -221,7 +221,7 @@ def get_state_from_enc_pub():
 def broadcast_enc_pub(dest=None, data=None):
     if dest == glob_id:
         #TODO Add glob_id as input to broadcastData
-        XBEE.get('session').broadcastData(data)
+        XBEE.get('session').broadcastData(dest, data)
     elif bases.get(dest) != None:
         XBEE.get('session').sendData(bases.get(dest).get('addr'), data, None, dest)
     elif drones.get(dest) != None:
@@ -343,7 +343,7 @@ def send_ping():
             else:
                 bases[b]['check'] = bases[b]['check'] - 1
     #TODO Enable Chunking of Broadcast Messages
-    broadcast_enc_pub(None, json.dumps(m), glob_id)
+    broadcast_enc_pub(glob_id, json.dumps(m))
 
 def send_reply_ping(data):
     coor = get_coordinates()
@@ -427,7 +427,7 @@ def send_propogate(data):
         m['q'] = q[1:]
         m['t'] = t
         recipient = q[0]
-    
+
     db(PROPOGATE)
     if not dev_id == data.get('og'):
         #TODO Could fail, may need glob_id instead of recipient
@@ -498,11 +498,11 @@ except:
     exit("global.pub was not found")
 
 # Find GPS
-if find_device(GPS):
-    if not startGPS(GPS):
-        exit("GPS Failed to Connect")
-else:
-    exit("GPS not found")
+#if find_device(GPS):
+#    if not startGPS(GPS):
+#        exit("GPS Failed to Connect")
+#else:
+#    exit("GPS not found")
 
 # Find XBEE
 if find_device(XBEE):
@@ -522,6 +522,7 @@ sp.call(["curl", "-f", "-s", "localhost:5000/xbee_info", "-X", "POST", "-d", jso
 
 # On bootup, send Ping
 send_ping()
+print "dank"
 try:
     while run:
         data = get_state_from_enc_pub()

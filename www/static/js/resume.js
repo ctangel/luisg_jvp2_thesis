@@ -57,7 +57,7 @@
       }
     });
   });
- 
+
   $("#sendFPBtn").on("click",function(){
     var formData = $(this).parent().serializeArray();
     $.post("/send_fp", formData, function(res){
@@ -68,19 +68,20 @@
       }
     });
   });
-  
+
   $("#updateNetwork").on("click",function(){
     $.post("/update_network", function(res){
       if (res != '200') {
         alert("Global Ping Failed to send");
       } else {
-        alert("Glbal Ping was Send to Drone");
+        alert("Global Ping was Send to Drone");
+        window.location.reload(true);
       }
     });
   });
 
   // Leaflet Stuff
-  
+
   // viewCoor = [lat, lng]
   // bases = [{base: %s, lat: %d, lng: %d}]
   function createMap(id, viewCoor, bases) {
@@ -97,8 +98,8 @@
       marker.bindTooltip(bases[i]['base'], {permanent:true}).openTooltip().addTo(mymap);
     }
   }
-  
-  // Example Dummy Data 
+
+  // Example Dummy Data
   var viewCoor = [51.5, -0.09];
   createMap('mapid', viewCoor, bases);
   createMap('mapid2', viewCoor, bases);

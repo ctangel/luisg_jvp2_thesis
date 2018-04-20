@@ -113,20 +113,25 @@ class Delivery():
         msgs = []
         for i, msg in enumerate(chunks):
             msgs.append("%s%s%s%s" % (msgID, self.REFLIST[i], self.REFLIST[max], msg))
+        if dest == '\x00\x00\x00\x00\x00\x00\xff\xff':
+                    del self.destinations[dest]        
         return self.batchEncrypt(msgs, devID)
 
     def unpackage(self, data, source, devID):
         assert(data is not None and source is not None)
+        print "\tunpacking..."
         dec_msg = self.decrypt(data, devID)
         try:
+            print "\tchecking for ack msg...",
             w = json.loads(dec_msg)
             if w.get('code') == 'y':
                 del self.destinations[source][w.get("msgID")]
             return (w.get('msgID'), None)
         except:
-            i = dec_msg[0] #Message Identifier
-            m = int(dec_msg[2]) #Number of partial messages for completed message
+            print "nope\n..."
             try:
+                i = dec_msg[0] #Message Identifier
+                m = int(dec_msg[2]) #Number of partial messages for completed message
                 #Means that this is the first message received with this identifier.
                 #Make a new MessageBuilder
                 if self.destinations.get(source) == None:
@@ -144,7 +149,7 @@ class Delivery():
                 return (None, None)
             except:
                 print "you royally messed up..."
-                return None
+                return (None, None)
 
     def __compileMessage(self, msgs):
         return ''.join([y[2:] for y in sorted(msgs, key = lambda x: self.REFLIST.index(x[0]))])
@@ -261,9 +266,9 @@ class Comms():
     """
         Broadcast 'data' across the entire network, all nodes.
     """
-    def broadcastData(self, data):
-        for msg in self.delivery.package(dest, data):
-            self.xb.send('tx', dest_addr_long=self.BROADCAST, dest=self.RESERVED_SERIAL, data=data)
+    def broadcastData(self, dest, data):
+        for msg in self.delivery.package(dest, data, dest):
+            self.xb.send('tx', dest_addr_long=self.BROADCAST, dest=self.RESERVED_SERIAL, data=msg)
             time.sleep(0.1)
         #TODO: type checking/null checking
 
@@ -283,17 +288,23 @@ class Comms():
         if os.path.isfile("global.pub"):
             with open("global.pub") as fn:
                 global_id = fn.read()
-
+        is_global = False
         msg = self.queue.get_nowait()
         if msg['id'] is 'rx':
             #TODO Handle both dev_id and glob_id
             msgID, data = self.delivery.unpackage(msg['rf_data'], msg['source_addr_long'], dev_id)
+            if msgID is None and data is None:
+                is_global = True
+                msgID, data = self.delivery.unpackage(msg['rf_data'], msg['source_addr_long'], global_id)
+            #FIXME  Code above trys to decrypt with dev_id, if it fails, then it attemps to decrypt with global_id
+            #       Could cause problems when mutliple messages are being sent over the network
             if data != None:
                 senderID = json.loads(data).get('id')
                 dest = msg['source_addr_long'] #FIXME: possibly in wrong format (but correct parameter)
                 m = {"code": "y", "msgID": msgID} #FIXME: get a global variable / not hardcoded
                 msg = self.delivery.encrypt(json.dumps(m), senderID)
-                self.sendData(dest=dest, data=msg, ack=True, devID=senderID)
+                if not is_global:
+                    self.sendData(dest=dest, data=msg, ack=True, devID=senderID)
                 return {'rx': data}
             else:
                 #del self.destinations[source][i]
