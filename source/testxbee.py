@@ -37,7 +37,7 @@ dev_id          = None
 glob_id         = None
 data            = {'code': IDLE}
 base            = {}
-drones          = []
+drones          = {}
 msgs            = {}
 debug           = False
 run             = True
@@ -91,51 +91,45 @@ def startXBEE(device):
         addr = device.get('session').getLocalAddr()
         time.sleep(1)
         device['addr'] = binascii.hexlify(addr[0] + addr[1])
-        #print device
         return True
     except:
-        device['session'].close()
         return False
 
 def get_state_from_enc_pub():
     global digest
     m = hashlib.md5()
     data = {"code": IDLE}
-    msg = 'd' 
+    msg = 'd'
     if not XBEE.get('session').isMailboxEmpty():
-        print "\t\tYou have mail!"
-        msg = XBEE.get('session').readMessage().get('rx')
+        msg = XBEE.get('session').readMessage()
+        if msg == None:
+            return data
+        msg = msg.get('rx')
         m.update(msg)
         if digest != m.digest():
             digest = m.digest()
-            # Try dev_id
-            print "\t\ttrying id... %s" % msg
-            dec = sp.check_output("./decrypt %s %s < param/a3.param" % (dev_id, msg), shell=True)
             try:
-                data = json.loads(dec)
+                data = json.loads(msg)
             except:
-                # Try glob_id
-                print "\t\ttrying global id... %s" % msg
-                dec = sp.check_output("./decrypt %s %s < param/a3.param" % (glob_id, msg), shell=True)
                 try:
-                    data = json.loads(dec)
+                    data = json.loads(msg)
                 except:
                     print "\t\tpass"
                     pass
     return data
 
 
-def broadcast_enc_pub(dest=None, broadcast=False, data=None):
+def broadcast_enc_pub(dest=None, data=None, devID=None):
     print "Broadcasting..."
     print data
-    if broadcast:
+    if dest == None:
         XBEE.get('session').broadcastData(data)
-    elif base.get(dest) != None:
-        print dest
-        dest_addr = binascii.unhexlify(XBEE.get('addr'))
-        XBEE.get('session').sendData(dest_addr, hdata)
-    else: 
-        print "Failed to send"
+    else:# base.get(dest) != None:
+        XBEE.get('session').sendData(dest, data, None, devID)
+    #elif drones.get(dest) != None:
+    #    XBEE.get('session').sendData(drones.get(dest).get('addr'), data)
+    #else:
+        #print "Failed to send"
         #exit("Failed to send")
 
 def idle():
@@ -145,7 +139,7 @@ def send_ping():
     global ping
     ping = False
     coor = {"lat": 12, "lng":34}
-    m = {"code": "luis is here", 
+    m = {"code": "luis is here",
             "id": dev_id,
             "addr":XBEE.get('addr'),
             "route":1,
@@ -160,9 +154,8 @@ def send_ping():
                 del base[b]
             else:
                 base[b]['check'] = base[b]['check'] - 1
-    m = {"code": PING}
-    h = sp.check_output("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), glob_id), shell=True)
-    broadcast_enc_pub(broadcast=True, data=h)
+    m = {"code": PING, "id":dev_id}
+    broadcast_enc_pub( '\x00\x00\x00\x00\x00\x00\xff\xff', json.dumps(m), glob_id)
 
 if find_device(XBEE):
     if not startXBEE(XBEE):
@@ -171,7 +164,7 @@ else:
     exit("Xbee not found")
 
 # On bootup, send Ping
-send_ping()
+#send_ping()
 
 print "/***** Starting Machine"
 try:
@@ -179,7 +172,7 @@ try:
         data = get_state_from_enc_pub()
         code = data.get('code')
         debug = data.get('debug', False)
-        
+
         if code == IDLE:
             print "\tIDLE"
             idle()

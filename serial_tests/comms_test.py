@@ -32,7 +32,7 @@ try:
     #if find_device(XBEE):
     #    print XBEE.get('port')
     #    xb   = Comms(XBEE.get('port'), data_only=True)
-    xb   = Comms(XB01, data_only=True)
+    #xb   = Comms(XB01, data_only=True)
         #xb   = Comms("/dev/ttyUSB0", data_only=True)
     #if find_device(XBEE):
     xb22 = Comms(XB22, data_only=True)
@@ -40,32 +40,32 @@ except:
     print "failed..."
     exit()
 
-print "Data only? " + str(xb.isDataOnly())
-print "switching..."
-xb.switchDataOnly()
-print "Data only? " + str(xb.isDataOnly())
-print "Mailbox empty? " + str(xb.isMailboxEmpty())
-print "message count: " + str(xb.messageCount())
+#print "Data only? " + str(xb.isDataOnly())
+#print "switching..."
+#xb.switchDataOnly()
+#print "Data only? " + str(xb.isDataOnly())
+#print "Mailbox empty? " + str(xb.isMailboxEmpty())
+#print "message count: " + str(xb.messageCount())
 
 data1 = "hey there! 1"
 data2 = "hey there! 2"
-data3 = "broadcasting"
-dest = SERIAL_NUM_HIGH + SERIAL_XB01_LOW #XB22 -> XB01
+#data3 = "broadcasting"
+dest = SERIAL_NUM_HIGH + SERIAL_XB22_LOW #XB22 -> XB01
 xb22.sendData(dest=dest, data = data1)
-xb22.sendData(dest=dest, data = data2)
-print "XB22 sent two messages..."
-print "Mailbox empty? " + str(xb.isMailboxEmpty())
-print "Message count: " + str(xb.messageCount())
-print xb.readMessage()
-print xb.readMessage()
-xb22.broadcastData(data3)
-print str(xb.messageCount())
-print xb.readMessage()
-print str(xb.readMessage())
+#xb22.sendData(dest=dest, data = data2)
+#print "XB22 sent two messages..."
+#print "Mailbox empty? " + str(xb.isMailboxEmpty())
+#print "Message count: " + str(xb.messageCount())
+#print xb.readMessage()
+#print xb.readMessage()
+#xb22.broadcastData(data3)
+#print str(xb.messageCount())
+print xb22.readMessage()
+#print str(xb.readMessage())
 
-xb.getLocalAddr()
+#xb.getLocalAddr()
 
-xb.close()
+#xb.close()
 xb22.close()
-del xb
+#del xb
 exit()

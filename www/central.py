@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, url_for, jsonify
-import os
+import os, math
 import subprocess as sp
 import json
 application = Flask(__name__)
@@ -8,8 +8,11 @@ application = Flask(__name__)
 def cal_distance(x1, y1, x2, y2):
     return math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
 
-def generate_graph(mapa):
+def generate_graph(raw_map):
     graph = {}
+    mapa = {}
+    for base in raw_map:
+        mapa[base.get('base')] = base
     for s in mapa:
         graph[s] = {}
         s1 = mapa.get(s).get("lat")
@@ -68,16 +71,9 @@ def dijkstra(graph,src,dest,visited=[],distances={},predecessors={}):
 @application.route("/")
 def hello():
   # Check if runbase.py is running, if no, then run
-  #output  = sp.check_output("ps", shell=True)
-  #running = False
-  #for i in output.split("\n"):
-  #    if "runbase.py" in i:
-  #        running = True
-  #if not running:
-  #    sp.Popen("python ../run/runbase.py", shell=True)
   bases = []
-  if os.path.isfile("../run/map.pub"):
-      with open("../run/map.pub") as fn:
+  if os.path.isfile("run/map.pub"):
+      with open("run/map.pub") as fn:
           bases = json.load(fn)
   #bases = [{"base": "A", "lat": 51.5, "lng": -0.09 },{"base": "B", "lat": 51.6, "lng": -0.09 }]
   return render_template("index.html", markers=json.dumps(bases), deviceList=[f for f in os.listdir('../devices/Base') if not f.startswith('.')], droneList=[f for f in os.listdir('../devices/Drone') if not f.startswith('.')])
@@ -95,13 +91,13 @@ def register():
   if deviceName == "central":
       devicePath = './run'
   else:
-    devicePath = '../devices/%s/%s' % (deviceType, deviceName)    
-  
+    devicePath = '../devices/%s/%s' % (deviceType, deviceName)
+
   if deviceName in os.listdir("../devices/Drone"):
     return '400'
   if deviceName in os.listdir("../devices/Base"):
     return '400'
-    
+
   # Create Folder in /devices/{deviceType}/{deviceName}
   os.system("mkdir %s" % (devicePath))
   os.system("mkdir %s/param" % (devicePath))
@@ -121,7 +117,7 @@ def register():
   else:
     os.system("cp ../source/rundrone.py %s" % (devicePath))
     os.system("cp ../source/testdrone.py %s" % (devicePath))
-  
+
   # try to send code to pi via scp
   # sshpass -p thesis123 scp -r ../devices/Base/{deviceName} pi%10.0.1.128:/home/pi
   if deviceName != "central":
@@ -146,22 +142,30 @@ def send_fp():
     input_json = request.form
     drone = input_json['drone']
     base = input_json['base']
-    CONFIRM_FP = 't'
+    SEND_FP = 'v'
     bases = {}
-    if os.path.isFile("../run/map.pub"):
-        with open("../run/map.pub") as fn:
+    if os.path.isfile("run/map.pub"):
+        with open("run/map.pub") as fn:
             bases = json.load(fn)
-    
     graph = generate_graph(bases)
     flight_plan = dijkstra(graph, "central", base)
-    # Get flight_plan from base 
+    with open("run/addr.pub") as fn:
+        addr_data = json.load(fn)
+    addrs = []
+    for stop in flight_plan:
+        addrs.append(addr_data.get(stop))
+    # Get flight_plan from base
     m = {
-            "code": CONFIRM_FP,
-            "id": drone,
-            "flight_plan": []
+            "code": SEND_FP,
+            "id": "central",
+            "flight_plan": flight_plan,
+            "addrs": addrs,
+            "drone": drone,
+            "addr": addr_data.get(drone)
         }
     try:
-        os.system("cd run && ./encrypt '%s' '%s'  < param/a3.param" % (json.dumps(m), "central"))
+        with open("run/flight_plan.pub", 'w') as fn:
+            fn.write(json.dumps(m))
         return '200'
     except:
         return '400'
@@ -169,18 +173,51 @@ def send_fp():
 @application.route("/update_network", methods=["POST"])
 def update_network():
     GLOBAL_PING = 'j'
-    with open('../run/glob.pub') as fn:
+    with open('run/global.pub') as fn:
         glob_dev = fn.read()
-    # Get flight_plan from base 
+    # Get flight_plan from base
     m = {"code": GLOBAL_PING}
     #TODO have this wait until it sees the map update
     try:
-        os.system("cd run && ./encrypt '%s' '%s'  < param/a3.param" % (json.dumps(m), glob_dev))
+        with open("run/update.pub", 'w') as fn:
+            fn.write(json.dumps(m))
+        data = None
+        if os.path.isfile("run/map.pub"):
+            with open("run/map.pub") as fn:
+                data = fn.read()
+        #while True:
+        #    if os.path.isfile('run/map.pub'):
+        #        with open("run/map.pub") as fn:
+        #            newdata = fn.read()
+        #        if data != newdata:
+        #            break
+        #        #TODO test, will not return and load page until update is complete
         return '200'
     except:
         return '400'
 
+@application.route("/xbee_info", methods=["POST"])
+def xbee_info():
+    h = json.loads(list(request.form)[0])
+    addr = h.get('addr')
+    dev = h.get('dev')
+    data = {}
+    if os.path.isfile("run/addr.pub"):
+        with open("run/addr.pub") as fn:
+            data = json.load(fn)
 
+    data[dev] = addr
+    with open("run/addr.pub", 'w') as fn:
+        fn.write(json.dumps(data))
+    return '200'
 
 if __name__ == "__main__":
-  application.run(host='0.0.0.0')
+    #output  = sp.check_output("ps", shell=True)
+    #running = False
+    #for i in output.split("\n"):
+    #    if "runbase.py" in i:
+    #        running = True
+    #if not running:
+    #  sp.Popen("cd run && python runbase.py", shell=True)
+ 
+    application.run(host='0.0.0.0', threaded=True)

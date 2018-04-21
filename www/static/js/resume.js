@@ -57,7 +57,7 @@
       }
     });
   });
- 
+
   $("#sendFPBtn").on("click",function(){
     var formData = $(this).parent().serializeArray();
     $.post("/send_fp", formData, function(res){
@@ -68,23 +68,24 @@
       }
     });
   });
-  
+
   $("#updateNetwork").on("click",function(){
     $.post("/update_network", function(res){
       if (res != '200') {
         alert("Global Ping Failed to send");
       } else {
-        alert("Glbal Ping was Send to Drone");
+        //alert("Global Ping was Send to Drone");
+        window.location.reload(true);
       }
     });
   });
 
   // Leaflet Stuff
-  
+
   // viewCoor = [lat, lng]
   // bases = [{base: %s, lat: %d, lng: %d}]
   function createMap(id, viewCoor, bases) {
-    var mymap = L.map(id).setView(viewCoor, 10);
+    var mymap = L.map(id).setView(viewCoor, 13);
 
     L.tileLayer('https://api.tiles.mapbox.com/v4/{id}/{z}/{x}/{y}.png?access_token=pk.eyJ1IjoiY3RhbmdlbDE0IiwiYSI6ImNqZnR5aHB4MzNuOGUyeG1rYWZtOHB4YXoifQ.zI08FZUwF9cczjG1P4wCMQ', {
       attribution: 'Map data &copy; <a href="http://openstreetmap.org">OpenStreetMap</a> contributors, <a href="http://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>, Imagery © <a href="http://mapbox.com">Mapbox</a>',
@@ -97,9 +98,9 @@
       marker.bindTooltip(bases[i]['base'], {permanent:true}).openTooltip().addTo(mymap);
     }
   }
-  
-  // Example Dummy Data 
-  var viewCoor = [51.5, -0.09];
+
+  // Example Dummy Data
+  var viewCoor = [40.34573916136237, -74.65477966767571];
   createMap('mapid', viewCoor, bases);
   createMap('mapid2', viewCoor, bases);
 

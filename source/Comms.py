@@ -1,6 +1,161 @@
 from xbee import ZigBee
 import Queue
-import serial, threading, time
+import serial, threading, time, string, binascii, subprocess as sp, os, json
+class MessageBuilder():
+    def __init__(self, num):
+        self.msgs = []
+        self.num = num
+
+    def getMsgs(self):
+        return self.msgs
+
+    def getNum(self):
+        return self.num
+
+    #Returns true if the last message added completed the expected number of
+    #received messages. Otherwise, returns false
+    def addMessage(self, msg):
+        self.msgs.append(msg)
+        return len(self.msgs) == self.num
+
+class Delivery():
+
+    REFLIST = list(string.printable[:94])
+    MAX_CHUNK_SIZE = 67 #73 - 2*3, where 73 is the max size of a data stream. 3 for the
+    #placeholder bytes needed for keeping track of messages
+    MAX_MSG_SIZE = len(REFLIST) * MAX_CHUNK_SIZE
+
+    """
+        Delivery class is meant to prepare messages for transmission and unpackage
+        recovered messages.
+    """
+    def __init__(self, chunk_limit=None):
+
+        #Maximum size that an individual data frame can be. Throw error if larger
+        #than MAX chunk Size
+        if chunk_limit == None or chunk_limit > self.MAX_CHUNK_SIZE:
+            self.chunk_limit = self.MAX_CHUNK_SIZE
+        else:
+            self.chunk_limit = chunk_limit
+        self.destinations = {} #This is intended to be a doubly nested dictionary
+        #where the top level represents the destinations, and the secondary level
+        #is for the message identifiers for the destinations
+        #recipients have MessageBuilder objects. Senders are denoted as "SENDER"
+
+    """
+        Given a data message 'msg', will breakup the message into the sizeable
+        chunks necessary for delivery on the XBEE device. Inteded as a helper function
+        for Delivery.send()
+    """
+    def __breakup(self, data):
+        chunks = []
+        length = len(data)
+        if length <= self.chunk_limit:
+            chunks.append(data)
+        elif length > self.chunk_limit:
+            if length % self.chunk_limit == 0:
+                num_chunks = (length/self.chunk_limit)
+            else:
+                num_chunks = (length/self.chunk_limit) + 1
+            for i in range(num_chunks):
+                lo = self.chunk_limit * i
+                hi = self.chunk_limit + lo
+                chunks.append(data[lo:hi])
+        else:
+            print "Error"
+        return chunks
+
+    """
+        Given a list of messages 'msgs', encrypte the messages. Returns a list
+        of encrypted messages to send out
+    """
+    def encrypt(self, data, devID):
+        enc_data = sp.check_output("./encrypt '%s' %s < param/a3.param" % (data, devID), shell=True)
+        return enc_data
+
+    def batchEncrypt(self, data, devID):
+        lst = []
+        for msg in data:
+            lst.append(self.encrypt(msg, devID))
+        return lst
+
+    def decrypt(self, data, devID):
+        dec_data = sp.check_output("./decrypt %s %s < param/a3.param" % (devID, data), shell=True)
+        return dec_data
+
+    def batchDecrypt(self, data, devID):
+        lst = []
+        for msg in data:
+            lst.append(self.decrypt(msg, devID))
+
+    """
+        Given a whole message 'data', will prepare the message for delivery and send
+        via the given 'comm' to the destination 'dest'
+    """
+    def package(self, dest, data, devID):
+        assert(data != None and dest != None and len(data) <= self.MAX_MSG_SIZE)
+
+        #Destination is new. Add dicitonary file for this destination
+        if self.destinations.get(dest) == None:
+            self.destinations[dest] = {}
+
+        chunks = self.__breakup(data)
+        max = len(chunks)
+
+        #Add a new message identifier to the dictionary file, marking as a "sender"
+        for msgID in self.REFLIST:
+            if msgID not in self.destinations[dest]:
+                self.destinations[dest][msgID] = 'SENDER'
+                break
+            return False
+
+        #prepare messages by prefixing and encrypting
+        msgs = []
+        for i, msg in enumerate(chunks):
+            msgs.append("%s%s%s%s" % (msgID, self.REFLIST[i], self.REFLIST[max], msg))
+        if dest == '\x00\x00\x00\x00\x00\x00\xff\xff':
+                    del self.destinations[dest]
+        return self.batchEncrypt(msgs, devID)
+
+    def unpackage(self, data, source, devID):
+        assert(data is not None and source is not None)
+        dec_msg = self.decrypt(data, devID)
+        try:
+            d = dec_msg.decode('ascii')
+            dd = repr(dec_msg).decode('ascii')
+        except:
+            return (None, None)
+        try:
+            w = json.loads(dec_msg)
+            if w.get('code') == 'y':
+                del self.destinations[source][w.get("msgID")]
+            return (w.get('msgID'), None)
+        except:
+            try:
+                i = dec_msg[0] #Message Identifier
+                m = int(dec_msg[2]) #Number of partial messages for completed message
+                #Means that this is the first message received with this identifier.
+                #Make a new MessageBuilder
+                if self.destinations.get(source) == None:
+                    self.destinations[source] = {}
+
+                #For this source, get the message identifier. If no identifier exists,
+                #Create a new diciotnary file with the Message Builder
+                if self.destinations[source].get(i) == None:
+                    self.destinations[source][i] = MessageBuilder(m)
+                if self.destinations[source][i].addMessage(dec_msg[1:]):
+                    complete_msg = self.__compileMessage(self.destinations[source][i].getMsgs())
+                    del self.destinations[source][i]
+                    return (i, complete_msg) #TODO: recipient now needs to send a confimration
+                return (i, None)
+            except:
+                return (None, None)
+
+    def __compileMessage(self, msgs):
+        return ''.join([y[2:] for y in sorted(msgs, key = lambda x: self.REFLIST.index(x[0]))])
+            #Sort messages by REFLIST, and then remove the message prefix from
+            #each message. Then combines all the messages and returns the completed
+            #message
 
 class Comms():
 
@@ -22,6 +177,8 @@ class Comms():
     def __init__(self, path, baud=9600, callback=None, data_only=False):
         self.path = path
         self.baud = baud
+        self.delivery = Delivery(chunk_limit=25)
+        #self.delivery = Delivery()
         if callback is None:
             self.callback = self.__queuedCallback
         else:
@@ -35,9 +192,8 @@ class Comms():
 
         try:
             self.xb = ZigBee(self.ser, callback=self.callback)
-        except(e):
+        except:
             print "xb initialization failed"
-            print e
             self.ser.close()
             exit()
 
@@ -99,17 +255,26 @@ class Comms():
     """
         Sends a 'tx' command. Sends 'data' to the address specified by 'dest'.
     """
-    def sendData(self, dest, data):
-        self.xb.send('tx', dest_addr_long=dest, dest=self.RESERVED_SERIAL, data=data)
-        time.sleep(0.15) #wait 15ms to ensure message can be sent out
-        #TODO: type checking/null checking
-
+    def sendData(self, dest, data, ack, devID):
+        if ack: #This should be encrypted. Luis promised it will be
+            self.xb.send('tx', dest_addr_long=dest, dest=self.RESERVED_SERIAL, data=data)
+            time.sleep(0.15) #wait 15ms to ensure message can be sent out
+            #TODO: type checking/null checking
+        else:
+            msgs = self.delivery.package(dest, data, devID)
+            if not msgs:
+                print "failed to send"
+                return
+            for msg in msgs:
+                self.xb.send('tx', dest_addr_long=dest, dest=self.RESERVED_SERIAL, data=msg)
+                time.sleep(0.15)
     """
         Broadcast 'data' across the entire network, all nodes.
     """
-    def broadcastData(self, data):
-        self.xb.send('tx', dest_addr_long=self.BROADCAST, dest=self.RESERVED_SERIAL, data=data)
-        time.sleep(0.1)
+    def broadcastData(self, dest, data):
+        for msg in self.delivery.package(dest, data, dest):
+            self.xb.send('tx', dest_addr_long=self.BROADCAST, dest=self.RESERVED_SERIAL, data=msg)
+            time.sleep(0.1)
         #TODO: type checking/null checking
 
     """
@@ -120,10 +285,39 @@ class Comms():
     """
     def readMessage(self):
         if self.isMailboxEmpty():
-            return False
+            return None
+        # Read in Device ID and Global ID from file
+        if os.path.isfile("id.pub"):
+            with open("id.pub") as fn:
+                dev_id = fn.read()
+        if os.path.isfile("global.pub"):
+            with open("global.pub") as fn:
+                global_id = fn.read()
+        is_global = False
         msg = self.queue.get_nowait()
         if msg['id'] is 'rx':
-            return {'rx': msg['rf_data']}
+            #TODO Handle both dev_id and glob_id
+            msgID, data = self.delivery.unpackage(msg['rf_data'], msg['source_addr_long'], dev_id)
+            if msgID is None and data is None:
+                is_global = True
+                msgID, data = self.delivery.unpackage(msg['rf_data'], msg['source_addr_long'], global_id)
+            #FIXME  Code above trys to decrypt with dev_id, if it fails, then it attemps to decrypt with global_id
+            #       Could cause problems when mutliple messages are being sent over the network
+            if data != None:
+                try:
+                    senderID = json.loads(data).get('id')
+                except:
+                    return None
+                dest = msg['source_addr_long'] #FIXME: possibly in wrong format (but correct parameter)
+                m = {"code": "y", "msgID": msgID} #FIXME: get a global variable / not hardcoded
+                msg = self.delivery.encrypt(json.dumps(m), senderID)
+                if not is_global:
+                    self.sendData(dest=dest, data=msg, ack=True, devID=senderID)
+                return {'rx': data}
+            else:
+                #del self.destinations[source][i]
+                pass
+            return None
         elif msg['id'] is 'at_response':
             return {'at_response': msg.get('parameter')}
 
@@ -139,6 +333,5 @@ class Comms():
 
         sh = self.queueAT.get_nowait()['parameter']
         sl = self.queueAT.get_nowait()['parameter']
-        print [sh, sl]
         return [sh, sl]
         #":".join("{:02x}".format(ord(c)) for c in s)
