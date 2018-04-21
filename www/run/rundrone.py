@@ -60,12 +60,12 @@ enc_file_name   = 'enc.pub'
 dec_file_name   = 'dec.pub'
 digest          = None
 message         = ' '
-data            = {'code': CONFIRM}
+data            = {'code': IDLE}
 flight_plan     = []
 flight_stop     = 1
 bases           = {}
 drones          = {}
-PREV_STATE      = CONFIRM
+PREV_STATE      = IDLE
 run             = True
 debug           = False
 dev_id          = None
@@ -142,7 +142,7 @@ def get_state_from_enc_pub():
     """ Checks if messages exists, if so, then is reads them in """
     global digest
     m = hashlib.md5()
-    data = {"code": IDLE}
+    data = {"code": PREV_STATE}
     msg = {}
     if not XBEE.get('session').isMailboxEmpty():
         msg = XBEE.get('session').readMessage()

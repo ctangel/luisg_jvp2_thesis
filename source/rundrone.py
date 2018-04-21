@@ -60,17 +60,18 @@ enc_file_name   = 'enc.pub'
 dec_file_name   = 'dec.pub'
 digest          = None
 message         = ' '
-data            = {'code': CONFIRM}
+data            = {'code': IDLE}
 flight_plan     = []
 flight_stop     = 1
 bases           = {}
 drones          = {}
-PREV_STATE      = CONFIRM
+PREV_STATE      = IDLE
 run             = True
 debug           = False
 dev_id          = None
 glob_id         = None
 target          = {"lat":None, "lng":None, "alt":None}
+fly             = False
 
 # Pixhawk Device Information
 PIXHAWK = {
@@ -141,7 +142,7 @@ def get_state_from_enc_pub():
     """ Checks if messages exists, if so, then is reads them in """
     global digest
     m = hashlib.md5()
-    data = {"code": IDLE}
+    data = {"code": PREV_STATE}
     msg = {}
     if not XBEE.get('session').isMailboxEmpty():
         msg = XBEE.get('session').readMessage()
@@ -199,26 +200,27 @@ def direct(data):
     print "\t\tBefore"
     print "\t\t\ttarget: %s" % repr(target)    
     print_info(data)
-    vehicle = PIXHAWK['session']
+    if fly:
+        viehicle = PIXHAWK['session']
     target["waymarks"] = data.get('waymarks')
     target["alt"] = data.get('alt') #NOTE: Altitude will never change with waymarks
     db(DIRECT)
     # code to translate coordinates into mechanical movements for the pixhawk
     # ideally the drone moves to the halfway mark to prepare for release()
+    if fly:
+        #Remove any previous waypoints
+        cmds = vehicle.commands
+        cmds.clr()
+        cmds.upload()
 
-    #Remove any previous waypoints
-    cmds = vehicle.commands
-    cmds.clr()
-    cmds.upload()
-
-    for point in target['waymarks'][:-1]:
-        cmd = Command(0,0,0, mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
-    0, 0, 0, 0, 0, 0,
-    point.get('lat'), point.get('lon'), target['alt'])
-    #TODO: is this the correct format for waymarks?
-        cmds.add(cmd)
-    cmds.upload()
-    vehicle.mode = VehicleMode("GUIDED")
+        for point in target['waymarks'][:-1]:
+            cmd = Command(0,0,0, mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+            0, 0, 0, 0, 0, 0,
+            point.get('lat'), point.get('lon'), target['alt'])
+            #TODO: is this the correct format for waymarks?
+            cmds.add(cmd)
+        cmds.upload()
+        vehicle.mode = VehicleMode("GUIDED")
     print "\t\tAfter"
     print "\t\t\ttarget: %s" % repr(target)    
     
@@ -258,31 +260,33 @@ def move_to_base(data):
     print_info(data)
     # Upload the final waypoint
     trgt = target["waymarks"][-1]
-    cmd = Command(0,0,0, mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
-    0, 0, 0, 0, 0, 0,
-    trgt.get('lat'), trgt.get('lon'), target['alt'])
-    cmds.add(cmd)
-    cmds.upload()
     db(MOVE)
-    PIXHAWK['session'].mode = VehicleMode("GUIDED")
-    # code to translate coordinates into mechanical movements for the pixhawk
-    # drone moves to the base
+    if fly:
+        cmd = Command(0,0,0, mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+        0, 0, 0, 0, 0, 0,
+        trgt.get('lat'), trgt.get('lon'), target['alt'])
+        cmds.add(cmd)
+        cmds.upload()
+        PIXHAWK['session'].mode = VehicleMode("GUIDED")
+        # code to translate coordinates into mechanical movements for the pixhawk
+        # drone moves to the base
 
 def abort(data):
     print_info(data)
     #Clear the current flight plan
-    cmds = PIXHAWK['session'].commands
-    cmds.clr()
-    cmds.upload()
+    if fly:
+        cmds = PIXHAWK['session'].commands
+        cmds.clr()
+        cmds.upload()
 
-    trgt = target['waymarks'][0]
-    cmd = Command(0,0,0, mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
-    0, 0, 0, 0, 0, 0,
-    trgt.get('lat'), trgt.get('lon'), target['alt'])
-    cmds.add(cmd)
-    cmds.upload()
-    PIXHAWK['session'].mode = VehicleMode("GUIDED")
-    db(ABORT)
+        trgt = target['waymarks'][0]
+        cmd = Command(0,0,0, mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+        0, 0, 0, 0, 0, 0,
+        trgt.get('lat'), trgt.get('lon'), target['alt'])
+        cmds.add(cmd)
+        cmds.upload()
+        PIXHAWK['session'].mode = VehicleMode("GUIDED")
+        db(ABORT)
 
 def reply_status(baseID, nextBaseID):
     coor = get_coordinates()
@@ -349,12 +353,14 @@ def arm_and_takeoff(targetAlt):
 def take_off(data):
     print_info(data)
     target["alt"] = data.get('alt')
-    arm_and_takeoff(target["alt"])
+    if fly:
+        arm_and_takeoff(target["alt"])
     db(TAKE_OFF)
 
 #NOTE: this function is called ONCE THE DRONE HAS REACHED IT'S LANDING LOCATION
 def land():
-    PIXHAWK['session'].mode = VehicleMode("LAND")
+    if fly:
+        PIXHAWK['session'].mode = VehicleMode("LAND")
     #NOTE: there is nothing here to ensure that the drone has completed it's landing
 
 def idle():
