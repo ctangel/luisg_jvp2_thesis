@@ -99,6 +99,9 @@ class Comms():
         Sends a 'tx' command. Sends 'data' to the address specified by 'dest'.
     """
     def sendData(self, dest, data):
+        print dest
+        print repr(dest)
+        dest = '\x00\x13\xa2\x00Au\xbc\x91'
         self.xb.send('tx', dest_addr_long=dest, dest=self.RESERVED_SERIAL, data=data)
         time.sleep(0.15) #wait 15ms to ensure message can be sent out
         #TODO: type checking/null checking
