@@ -122,7 +122,7 @@ def startXBEE(device):
         device['session'] = Comms.Comms(device.get('port'), data_only=True)
         addr = device.get('session').getLocalAddr()
         time.sleep(1)
-        device['addr'] = addr[0] + addr[1]
+        device['addr'] = binascii.hexlify(addr[0] + addr[1])
         return True
     except:
         device['session'].close()
@@ -355,9 +355,10 @@ if find_device(XBEE):
         exit("XBEE Failed to Connect")
 else:
     exit("XBEE not Found")
-
+print "setting up"
 # Send Xbee info to Central base
 m = {"addr":XBEE.get('addr'), "dev":dev_id}
+print m
 sp.call(["curl", "-f", "-s", "10.0.1.72:5000/xbee_info", "-X", "POST", "-d", json.dumps(m)], shell=False)
 
 
