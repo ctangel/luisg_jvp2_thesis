@@ -163,7 +163,6 @@ def send_fp():
             "drone": drone,
             "addr": addr_data.get(drone)
         }
-    print m
     try:
         with open("run/flight_plan.pub", 'w') as fn:
             fn.write(json.dumps(m))
@@ -203,8 +202,6 @@ def xbee_info():
     addr = h.get('addr')
     dev = h.get('dev')
     data = {}
-    print addr
-    print dev
     if os.path.isfile("run/addr.pub"):
         with open("run/addr.pub") as fn:
             data = json.load(fn)

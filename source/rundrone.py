@@ -38,6 +38,7 @@ TAKE_OFF        = 's'
 CONFIRM_FP      = 't'
 REPLY_STATUS    = 'w'
 ACK             = 'y'
+LAND            = 'z'
 
 # Base Codes
 IDLE            = 'a'
@@ -61,8 +62,9 @@ digest          = None
 message         = ' '
 data            = {'code': CONFIRM}
 flight_plan     = []
-flight_stop     = 0;
+flight_stop     = 1
 bases           = {}
+drones          = {}
 PREV_STATE      = CONFIRM
 run             = True
 debug           = False
@@ -157,17 +159,24 @@ def get_state_from_enc_pub():
     return data
 
 def broadcast_enc_pub(dest=None, data=None):
+    print bases
+    print drones
     if dest == glob_id:
-        #TODO Add glob_id as input to broadcastData
-        XBEE.get('session').broadcastData(dest, data)
+        XBEE.get('session').sendData(Comms.Comms.BROADCAST, data, None, dest)
     elif bases.get(dest) != None:
         XBEE.get('session').sendData(bases.get(dest).get('addr'), data, None, dest)
     elif drones.get(dest) != None:
+        print "sending to %s at %s" % (dest, repr(drones.get(dest).get('addr')))
         XBEE.get('session').sendData(drones.get(dest).get('addr'), data, None, dest)
     else:
         print "Failed to send"
         #exit("Failed to send")
 
+def print_info(data):
+    print "\t\tReceived..."
+    for key in data:
+        print "\t\t\t%s\t\t%s" %(key, repr(data.get(key)))
+ 
 
 #
 #   State Machtine
@@ -182,11 +191,14 @@ def ask_for_direction(baseID, nextBaseID):
     # request base for direction to next base
     m = {'code': SEND_DIRECT, 'base': nextBaseID, 'id': dev_id}
     db(ASK_DIRECT)
-    broadcast_enc_pub(baseID, json.dump(m))
+    broadcast_enc_pub(baseID, json.dumps(m))
 
 def direct(data):
     #checkout send_directions() in runbase.py
     global target
+    print "\t\tBefore"
+    print "\t\t\ttarget: %s" % repr(target)    
+    print_info(data)
     vehicle = PIXHAWK['session']
     target["waymarks"] = data.get('waymarks')
     target["alt"] = data.get('alt') #NOTE: Altitude will never change with waymarks
@@ -207,6 +219,9 @@ def direct(data):
         cmds.add(cmd)
     cmds.upload()
     vehicle.mode = VehicleMode("GUIDED")
+    print "\t\tAfter"
+    print "\t\t\ttarget: %s" % repr(target)    
+    
     """
             msg = vehicle.message_factory.set_position_target_global_int_encode(
             0,       # time_boot_ms (not used)
@@ -229,16 +244,18 @@ def direct(data):
     """
 
 def release(baseID):
-    m = {'code': RELEASE_MSG, 'id': dev_id}
+    m = {'code': RELEASE_MSG, 'id': dev_id, 'addr':XBEE.get('addr')}
     db(RELEASE)
     broadcast_enc_pub(baseID, json.dumps(m))
 
 def send_msg(data, baseID, nextBaseID):
+    print_info(data)
     m = {'code': FORWARD,'id':dev_id, 'base': baseID, "msg": data.get('msg')}
     db(SEND)
-    broadcast_enc_pub(newBaseID, json.dumps(m))
+    broadcast_enc_pub(nextBaseID, json.dumps(m))
 
 def move_to_base(data):
+    print_info(data)
     # Upload the final waypoint
     trgt = target["waymarks"][-1]
     cmd = Command(0,0,0, mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
@@ -252,7 +269,7 @@ def move_to_base(data):
     # drone moves to the base
 
 def abort(data):
-
+    print_info(data)
     #Clear the current flight plan
     cmds = PIXHAWK['session'].commands
     cmds.clr()
@@ -277,16 +294,23 @@ def reply_status(baseID, nextBaseID):
 def confirm_flight_plan(data):
     global flight_plan
     global flight_stop
-    global flight_plan
     global bases
-    flight_stop = 0
+    print_info(data)
+    print "\t\tBefore"
+    print "\t\t\tflight_plan: %s" % repr(flight_plan)  
+    print "\t\t\tflight_stop: %s" % repr(flight_stop)  
+    print "\t\t\tbases:       %s" % repr(bases)  
+    flight_stop = 1
     flight_plan = data.get('flight_plan')
     addrs = data.get('addrs')
-    for i, base in eneruate(flight_plan):
-        bases[base] = {"addr": addrs[i]}
-
+    for i, base in enumerate(flight_plan):
+        bases[base] = {"addr": binascii.unhexlify(addrs[i])}
+    print "\t\tAfter"
+    print "\t\t\tflight_plan: %s" % repr(flight_plan)  
+    print "\t\t\tflight_stop: %s" % repr(flight_stop)  
+    print "\t\t\tbases:       %s" % repr(bases)  
     if flight_plan != None:
-        m = {'code': CONFIRM_FP, 'id': dev_id, 'base': flight_plan[flight_stop]}
+        m = {'code': START_TAKE_OFF, 'id': dev_id, 'base': flight_plan[flight_stop]}
         db(CONFIRM_FP)
         broadcast_enc_pub(data.get('id'), json.dumps(m))
 
@@ -294,7 +318,7 @@ def arm_and_takeoff(targetAlt):
     vehicle = PIXHAWK['session']
 
     #Do not continue until vehicle is ready to accept takeoff and requests
-    while not v.is_armable:
+    while not vehicle.is_armable:
         time.sleep(3)
 
     #Clear any previous commands/missions before takeoff
@@ -323,6 +347,7 @@ def arm_and_takeoff(targetAlt):
     return
 
 def take_off(data):
+    print_info(data)
     target["alt"] = data.get('alt')
     arm_and_takeoff(target["alt"])
     db(TAKE_OFF)
@@ -355,10 +380,9 @@ if find_device(XBEE):
         exit("XBEE Failed to Connect")
 else:
     exit("XBEE not Found")
-print "setting up"
+
 # Send Xbee info to Central base
 m = {"addr":XBEE.get('addr'), "dev":dev_id}
-print m
 sp.call(["curl", "-f", "-s", "10.0.1.72:5000/xbee_info", "-X", "POST", "-d", json.dumps(m)], shell=False)
 
 
@@ -376,7 +400,7 @@ try:
         code  = data.get('code')
         debug = data.get('debug', False)
 
-        if len(flight_plan) == 0 and not code == SEND_FP:
+        if len(flight_plan) == 0 and not code == CONFIRM_FP:
             code = IDLE
 
         if code == IDLE:
@@ -385,12 +409,12 @@ try:
             idle()
         elif code == CONFIRM_FP:
             print "CONFIRM_FP"
-            PREV_STATE = CONFIRM_FP
+            PREV_STATE = IDLE
             confirm_flight_plan(data)
         elif code == TAKE_OFF:
             print "TAKE_OFF"
             PREV_STATE = TAKE_OFF
-            take_off()
+            take_off(data)
             PREV_STATE = MOVE
         elif code == CONFIRM:
             print "CONFIRM"
@@ -398,8 +422,8 @@ try:
             broadcast_to_base(dev_id, flight_plan[flight_stop])
         elif code == ASK_DIRECT:
             print "ASK_DIRECT"
-            PREV_STATE = ASK_DIRECT
-            ask_for_direction(flight_plan[flight_stop], flight_plan[flight_stop+1])
+            PREV_STATE = IDLE
+            ask_for_direction(flight_plan[flight_stop-1], flight_plan[flight_stop])
         elif code == DIRECT:
             print "DIRECT"
             PREV_STATE = DIRECT
@@ -407,18 +431,21 @@ try:
             PREV_STATE = RELEASE
         elif code == RELEASE:
             print "RELEASE"
-            PREV_STATE = RELEASE
-            release(dev_id, flight_plan[flight_stop])
+            PREV_STATE = IDLE
+            release(flight_plan[flight_stop-1])
         elif code == SEND:
             print "SEND"
-            PREV_STATE = SEND
-            send_msg(data, flight_plan[flight_stop], flight_plan[flight_stop+1])
+            PREV_STATE = IDLE
+            send_msg(data, flight_plan[flight_stop-1], flight_plan[flight_stop])
         elif code == MOVE:
             print "MOVE"
             PREV_STATE = MOVE
             move_to_base(data)
             flight_stop += 1
-            PREV_STATE = CONFIRM
+            if len(flight_plan) <= flight_stop:
+                PREV_STATE = LAND
+            else:
+                PREV_STATE = CONFIRM
         elif code == ABORT:
             print "ABORT"
             PREV_STATE = ABORT
@@ -428,6 +455,10 @@ try:
             print "REPLY_STATUS"
             PREV_STATE = IDLE
             reply_status(dev_id, flight_plan[flight_stop])
+        elif code == LAND:
+            print 'LAND'
+            PREV_STATE = IDLE
+            land()
         else:
             print 'error: add code to throw an exception'
         time.sleep(1)

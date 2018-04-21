@@ -101,7 +101,7 @@ class Delivery():
 
         chunks = self.__breakup(data)
         max = len(chunks)
-        
+
         #Add a new message identifier to the dictionary file, marking as a "sender"
         for msgID in self.REFLIST:
             if msgID not in self.destinations[dest]:
@@ -114,63 +114,39 @@ class Delivery():
         for i, msg in enumerate(chunks):
             msgs.append("%s%s%s%s" % (msgID, self.REFLIST[i], self.REFLIST[max], msg))
         if dest == '\x00\x00\x00\x00\x00\x00\xff\xff':
-                    del self.destinations[dest]        
+                    del self.destinations[dest]
         return self.batchEncrypt(msgs, devID)
 
     def unpackage(self, data, source, devID):
         assert(data is not None and source is not None)
-        #print "unpacking... with"
-        #print "\tdata     %s" % data
-        #print "\tsource   %s" % repr(source)
-        #print "\tdevID    %s" % devID
         dec_msg = self.decrypt(data, devID)
-        #print "\tdecytped %s" % dec_msg
-        #print "\tdecytped %s" % repr(dec_msg)
         try:
-            #print "decoding..."
             d = dec_msg.decode('ascii')
-            #print d
             dd = repr(dec_msg).decode('ascii')
-            #print dd
-            #print len(d) == len(dd)
-            #print
         except:
-            #print "failed"
-            #print 
             return (None, None)
         try:
-            #print "\tchecking if an ack..."
             w = json.loads(dec_msg)
             if w.get('code') == 'y':
                 del self.destinations[source][w.get("msgID")]
-            #print "\tit was"
             return (w.get('msgID'), None)
         except:
             try:
-                #print "\tnope"
                 i = dec_msg[0] #Message Identifier
                 m = int(dec_msg[2]) #Number of partial messages for completed message
                 #Means that this is the first message received with this identifier.
                 #Make a new MessageBuilder
-                #print "\tcheck destinations"
-                #print self.destinations
                 if self.destinations.get(source) == None:
-                    #print "\tcreating new dic for %s" % repr(source)
                     self.destinations[source] = {}
 
                 #For this source, get the message identifier. If no identifier exists,
                 #Create a new diciotnary file with the Message Builder
-                #print "\tcheck 1.5"
                 if self.destinations[source].get(i) == None:
-                    #print "\tmaking message builder"
                     self.destinations[source][i] = MessageBuilder(m)
-                #print "\tcheck 2" 
                 if self.destinations[source][i].addMessage(dec_msg[1:]):
-                    #print "\tmessage is complete!"
                     complete_msg = self.__compileMessage(self.destinations[source][i].getMsgs())
                     del self.destinations[source][i]
                     return (i, complete_msg) #TODO: recipient now needs to send a confimration
-                #print "\tcheck 3"
                 return (i, None)
             except:
                 return (None, None)
@@ -285,7 +261,11 @@ class Comms():
             time.sleep(0.15) #wait 15ms to ensure message can be sent out
             #TODO: type checking/null checking
         else:
-            for msg in self.delivery.package(dest, data, devID):
+            msgs = self.delivery.package(dest, data, devID)
+            if not msgs:
+                print "failed to send"
+                return
+            for msg in msgs:
                 self.xb.send('tx', dest_addr_long=dest, dest=self.RESERVED_SERIAL, data=msg)
                 time.sleep(0.15)
     """
@@ -315,15 +295,10 @@ class Comms():
                 global_id = fn.read()
         is_global = False
         msg = self.queue.get_nowait()
-        #print msg
         if msg['id'] is 'rx':
             #TODO Handle both dev_id and glob_id
-            #print "unpacking with %s"%dev_id
             msgID, data = self.delivery.unpackage(msg['rf_data'], msg['source_addr_long'], dev_id)
-            #print msgID
-            #print data
             if msgID is None and data is None:
-                #print "unpacking with %s" % global_id
                 is_global = True
                 msgID, data = self.delivery.unpackage(msg['rf_data'], msg['source_addr_long'], global_id)
             #FIXME  Code above trys to decrypt with dev_id, if it fails, then it attemps to decrypt with global_id
@@ -332,8 +307,6 @@ class Comms():
                 try:
                     senderID = json.loads(data).get('id')
                 except:
-                    #print msgID
-                    #print data
                     return None
                 dest = msg['source_addr_long'] #FIXME: possibly in wrong format (but correct parameter)
                 m = {"code": "y", "msgID": msgID} #FIXME: get a global variable / not hardcoded
@@ -360,6 +333,5 @@ class Comms():
 
         sh = self.queueAT.get_nowait()['parameter']
         sl = self.queueAT.get_nowait()['parameter']
-        print [sh, sl]
         return [sh, sl]
         #":".join("{:02x}".format(ord(c)) for c in s)
