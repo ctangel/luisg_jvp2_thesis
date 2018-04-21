@@ -7,7 +7,7 @@ sys.path.append('../serial_tests'); import getPixhawkPort as getPort
 path = getPort.find_device(getPort.pixhawk)
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--connect', default=path) #TODO: what does this do?
+parser.add_argument('--connect', default=path)
 args = parser.parse_args()
 exit()
 

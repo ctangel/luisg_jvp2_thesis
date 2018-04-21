@@ -14,11 +14,14 @@ import threading
 import random
 import string
 import json
-import geopy
+import math
+from geopy import distance
+import binascii
 import time
-import gps
+#import gps
 import serial.tools.list_ports
 import subprocess as sp
+import Comms
 
 # CODES
 IDLE            = 'a'
@@ -37,7 +40,7 @@ SEND_FP         = 'v'
 CHECK_STATUS    = 'x'
 
 # Drone Codes
-CONFRIM         = 'l'
+CONFIRM         = 'l'
 DIRECT          = 'm'
 ASK_DIRECT      = 'n'
 RELEASE         = 'o'
@@ -47,44 +50,41 @@ ABORT           = 'r'
 TAKE_OFF        = 's'
 CONFIRM_FP      = 't'
 REPLY_STATUS    = 'w'
+ACK             = 'y'
+LAND            = 'z'
 
 # Global Variables
-enc_file_name   = 'enc.pub'
-dec_file_name   = 'dec.pub'
 db_file_name    = 'deb.pub'
 digest          = None
 dev_id          = None
 glob_id         = None
 data            = {'code': IDLE}
-mapa            = {}
-base            = {}
-drones          = []
+bases           = {}
+drones          = {}
 msgs            = {}
 debug           = False
 run             = True
 request         = False
+ping            = False
+base_alt        = 5
+dev_coor        = None
 
 # GPS Device Information
 GPS = {
     "vid": ["067B","10C4"],
     "pid": ["2303","EA60"],
     "port": None,
-    "session": None
+    "session": `None`
 }
 
-# Get ID Name
-try:
-    with open("id.pub") as fn:
-        dev_id = fn.read()
-except:
-    exit("id.pub was not found")
-
-# Get Global Id
-try:
-    with open("global.pub") as fn:
-        glob_id = fn.read()
-except:
-    exit("global.pub was not found")
+# XBEE Device Information
+XBEE = {
+    "vid":      ["0403"],
+    "pid":      ["6015"],
+    "port":     None,
+    "addr":     None,
+    "session":  None
+}
 
 def find_device(device):
     """ Searches system's open ports for the provided device.
@@ -98,11 +98,65 @@ def find_device(device):
     return False
 
 def db(STATE):
+    """ Used in debuging, will print state machine's current state """
     global run
     if debug:
         with open(db_file_name, 'w') as fn:
             fn.write(STATE)
         #run = False
+
+def get_bearing(origin, target):
+    """ Returns the bearing (0 - 360 deg) the path between the two supplied GPS cooridates will
+        take the drone towards """
+    lat1 = math.radians(origin.get('lat'))
+    lng1 = math.radians(origin.get('lng'))
+    lat2 = math.radians(target.get('lat'))
+    lng2 = math.radians(target.get('lng'))
+    y = math.sin(lng2-lng1) * math.cos(lat2);
+    x = (math.cos(lat1) * math.sin(lat2)) - (math.sin(lat1) * math.cos(lat2) * math.cos(lng2-lng1));
+    brng = math.degrees(math.atan2(y, x));
+    deg = 360 - ((brng + 360) % 360);
+    return ((brng + 360) % 360);
+
+def get_new_coor(coor, brng, d):
+    """ Returns the new coordinates of a location d kilometers in brng bearing from coordinates
+        (lat, lng1) """
+    lat1 = math.radians(coor.get('lat'))
+    lng1 = math.radians(coor.get('lng'))
+    R = 6371.0
+    lat2 = math.asin((math.sin(lat1)*math.cos(d/R)) + (math.cos(lat1)*math.sin(d/R)*math.cos(math.radians(brng)) ));
+    lng2 = lng1 + math.atan2(math.sin(math.radians(brng))*math.sin(d/R)*math.cos(lat1), math.cos(d/R) - (math.sin(lat1)*math.sin(lat2)));
+    return {"lat":math.degrees(lat2), "lng":math.degrees(lng2)}
+
+def get_distance(coor1, coor2):
+    pos1 = (coor1.get('lat'), coor1.get('lng'))
+    pos2 = (coor2.get('lat'), coor2.get('lng'))
+    return distance.distance(pos1, pos2).kilometers
+
+
+def get_coordinates():
+    data = {'lat': None, 'lng': None, 'alt':None}
+    #TODO Remove, used in tested
+    return {"lat": 40.3470190911147, "lng":-74.66142010205618, "alt":12}
+    if GPS.get('session') != None:
+        report = GPS['session'].next()
+        if report.get('class') == 'TPV':
+            if hasattr(report, 'lat') and hasattr(report, 'lon'):
+                data['lat'] = report.lat
+                data['lng'] = report.lon
+                data['alt'] = report.alt
+    return data
+
+
+def trigger_request():
+    global request
+    threading.Timer(100, trigger_request)
+    request = True
+
+def trigger_ping():
+    global ping
+    threading.Timer(100, trigger_ping)
+    ping = True
 
 def startGPS(device):
     """ Sets up and establishes a connection with the provided gps device.
@@ -139,9 +193,65 @@ def startGPS(device):
         report = device['session'].next()
     return True
 
-def broadcast_enc_pub():
-    #TODO
-    pass
+def startXBEE(device):
+    try:
+        device['session'] = Comms.Comms(device.get('port'), data_only=True)
+        addr = device.get('session').getLocalAddr()
+        time.sleep(1)
+        device['addr'] = binascii.hexlify(addr[0] + addr[1])
+        return True
+    except:
+        device['session'].close()
+        return False
+
+def get_state_from_enc_pub():
+    """ Checks if messages exists, if so, then is reads them in """
+    global digest
+    m = hashlib.md5()
+    data = {"code": IDLE}
+    msg = {}
+    if not XBEE.get('session').isMailboxEmpty():
+        msg = XBEE.get('session').readMessage()
+        if msg == None:
+            return data
+        msg = msg.get('rx')
+        m.update(msg)
+        if digest != m.digest():
+            digest = m.digest()
+        try:
+            data = json.loads(msg)
+        except:
+            print "\t\tpass"
+            pass
+    return data
+
+def broadcast_enc_pub(dest=None, data=None):
+    print "\t\tSending...:"
+    jdata = json.loads(data)
+    for key in jdata:
+        print "\t\t\t%s\t\t%s" % (key, repr(jdata.get(key)))
+    if dest == glob_id:
+        print "\t\tsending to %s at %s" % (dest, repr(Comms.Comms.BROADCAST))
+        XBEE.get('session').sendData(Comms.Comms.BROADCAST, data, None, dest)
+    elif bases.get(dest) != None:
+        print "\t\tsending to %s at %s" % (dest, repr(bases.get(dest).get('addr')))
+        XBEE.get('session').sendData(bases.get(dest).get('addr'), data, None, dest)
+    elif drones.get(dest) != None:
+        print "\t\tsending to %s at %s" % (dest, repr(drones.get(dest).get('addr')))
+        XBEE.get('session').sendData(drones.get(dest).get('addr'), data, None, dest)
+    else:
+        print "\t\t/*** Failed to send"
+        #exit("Failed to send")
+
+def print_info(data):
+    print "\t\tReceived..."
+    for key in data:
+        print "\t\t\t%s\t\t%s" %(key, repr(data.get(key)))
+    
+
+#
+#   State Methods
+#
 
 def idle():
     global run
@@ -149,170 +259,307 @@ def idle():
 
 def send_connection_confirmation(data):
     global drones
-    m = {'code': ASK_DIRECT, 'data': 'OK'}
-    os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')))
+    print_info(data)
+    print "\t\tBefore"
+    print "\t\t\tdrone: %s" % repr(drones)  
+    m = {'code': ASK_DIRECT, 'id': dev_id, 'data': 'OK'}
     if data.get('id') not in drones:
-        drones.append(data.get('id'))
+        drones[data.get('id')] = {"addr": binascii.unhexlify(data.get('addr'))}
+    print "\t\tAfter"
+    print "\t\t\tdrones: %s" % repr(drones)
     db(SEND_CONFIRM)
-    broadcast_enc_pub()
+    broadcast_enc_pub(data.get('id'), json.dumps(m))
 
 def send_directions(data):
-    b = base.get(data.get('base'))
+    global bases
+    print_info(data)
+    print "\t\tBefore"
+    print "\t\t\tbases: %s" % repr(bases) 
+    b = bases.get(data.get('base'))
     if b == None:
-        # Handle Situation when base provided is not in recognized by the base
-        m = {
-                'code': ABORT
-            }
-        pass
-    else :
+        #TODO Handle Situation when base provided is not in recognized by the base
+        m = {'code': ABORT, "id": dev_id}
+    else:
+        # Find open path
+        path = None
+        for p in b.get("paths"):
+            if b.get("paths").get(p) == None:
+                path = p
+        if path == None:
+            #TODO   Do not exit, properly handle case when all paths are take
+            #       Consider having the drone hover in place or land and wait
+            #       until a path frees up
+            exit("All Paths are taken")
+        waymarks = []
+        # Generate Path
+        b["paths"][p] = data.get('id')
+        origin = {"lat":dev_coor.get('lat'), "lng":dev_coor.get('lng')}
+        target = {"lat":b.get('lat'), "lng":b.get('lng')}
+        brng = get_bearing(origin, target)
+        d = 0.001
+        if p == "1":
+            left = (brng - 90) % 360
+            waymarks.append(get_new_coor(origin, left, d))
+            dist = get_distance(waymarks[0], target)
+            third = dist / 3.0
+            remainder = dist - third
+            waymarks.append(get_new_coor(waymarks[0], 0, third))
+            waymarks.append(get_new_coor(waymarks[1], 0, remainder))
+        elif p == "2":
+            dist = get_distance(origin, target)
+            third = dist / 3.0
+            remainder = dist - third
+            waymarks.append(get_new_coor(origin, 0, third))
+            waymarks.append(get_new_coor(waymarks[0], 0, remainder))
+        else:
+            right = (brng + 90) % 360
+            waymarks.append(get_new_coor(origin, right, d))
+            dist = get_distance(waymarks[0], target)
+            third = dist / 3.0
+            remainder = dist - third
+            waymarks.append(get_new_coor(waymarks[0], 0, third))
+            waymarks.append(get_new_coor(waymarks[1], 0, remainder))
+        # Send info
         m = {
                 'code': DIRECT,
-                'lng': base.get(data.get('base')).get('lng'),
-                'lat' : base.get(data.get('base')).get('lat'),
+                'waymarks': waymarks,
+                'id': dev_id,
+                'lng': bases.get(data.get('base')).get('lng'), #FIXME: get rid of old way
+                'lat': bases.get(data.get('base')).get('lat'), #FIXME: get rid of old way
+                'alt': dev_coor.get('alt') + (bases[data.get('base')].get('out') * base_alt)
             }
-    os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')))
+    print "\t\tAfter"
+    print "\t\t\tbases: %s" % repr(bases)
     db(SEND_DIRECT)
-    broadcast_enc_pub()
+    broadcast_enc_pub(data.get('id'), json.dumps(m))
 
 def send_release_msg(data):
-    m = {
-            'code': SEND,
-            'msg': 'asdef'
-        }
+    global msgs
+    global drones
+    print_info(data)
+    print "\t\tBefore"
+    print "\t\t\tmsgs:   %s" % repr(msgs)
+    print "\t\t\tdrones: %s" % repr(drones)
+    m = {'code': SEND, 'msg': 'asdef', "id": dev_id}
+    drones[data.get('id')] = {'addr':binascii.unhexlify(data.get('addr'))}
     chars = string.ascii_uppercase + string.digits
     m['msg'] = ''.join(random.choice(chars) for _ in range(12))
     msgs[data.get('id')] = m.get('msg')
-    os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')))
+    print "\t\tAfter"
+    print "\t\t\tmsgs:   %s" % repr(msgs)
+    print "\t\t\tdrones: %s" % repr(drones)
     db(RELEASE_MSG)
-    broadcast_enc_pub()
+    broadcast_enc_pub(data.get('id'), json.dumps(m))
 
 def forward_release_msg(data):
+    print_info(data)
+    print "\t\tBefore"
+    print "\t\t\tmsgs:   %s" % repr(msgs)
+    print "\t\t\tdrones: %s" % repr(drones)
     m = {
             'code': RELEASE_ACC,
-            'msg': data.get("msg")
+            'msg': data.get("msg"),
+            'id': data.get('id'),
+            'base': dev_id
         }
-    os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('base')))
     db(FORWARD)
-    broadcast_enc_pub()
+    print "\t\tAfter"
+    print "\t\t\tmsgs:   %s" % repr(msgs)
+    print "\t\t\tdrones: %s" % repr(drones)
+    broadcast_enc_pub(data.get('base'), json.dumps(m))
 
 def send_release_acceptance(data):
-    m = {'code': MOVE, 'msg':'OK'}
+    global drones
+    global bases
+    print_info(data)
+    print "\t\tBefore"
+    print "\t\t\tbases:  %s" % repr(bases)
+    print "\t\t\tdrones: %s" % repr(drones)
+    m = {'code': MOVE}
     if data.get('msg') != msgs.get(data.get('id')):
         m['msg'] = 'FAILED'
-    os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')))
-    if data.get('id') in drones:
-        drones.remove(data.get('id'))
+    for p in bases[data.get('base')].get('paths'):
+        if bases[data.get('base')].get('paths').get(p) == data.get('id'):
+            bases[data.get('base')]['paths'][p] = None
     db(RELEASE_ACC)
-    broadcast_enc_pub()
-
-
-def get_state_from_enc_pub():
-    global digest
-    m = hashlib.md5()
-    data = {"code": IDLE}
-    if os.path.isfile(enc_file_name):
-        with open(enc_file_name) as f:
-            m.update(f.read())
-            if digest != m.digest():
-                digest = m.digest()
-                # Try dev_id
-                os.system("./decrypt %s < param/a3.param" % (dev_id))
-                try:
-                    with open(dec_file_name) as ff:
-                        data = json.load(ff)
-                except:
-                    # Try glob_id
-                    os.system("./decrypt %s < param/a3.param" % (glob_id))
-                    try:
-                        with open(dec_file_name) as ff:
-                            data = json.load(ff)
-                    except:
-                        pass
-                        #exit("dec.pub failed to decrypt")
-    return data
-
-def get_coordinates():
-    data = {'lat': None, 'lng': None}
-    if GPS.get('session') != None:
-        report = GPS['session'].next()
-        if report.get('class') == 'TPV':
-            if hasattr(report, 'lat') and hasattr(report, 'lon'):
-                data['lat'] = report.lat
-                data['lng'] = report.lon
-    return data
+    broadcast_enc_pub(data.get('id'), json.dumps(m))
+    if data.get('id') in drones:
+       del drones[data.get('id')]
+    print "\t\tAfter"
+    print "\t\t\tbases:  %s" % repr(bases)
+    print "\t\t\tdrones: %s" % repr(drones)
 
 def send_ping():
-    m = {'code': REPLY_PING, 'id': dev_id}
-    os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), glob_id))
-    db(PING)
-    broadcast_enc_pub()
+    global ping
+    global bases
+    ping = False
+    print "\t\tBefore"
+    print "\t\t\tbases: %s" % repr(bases)
+    m = {"code": REPLY_PING,
+            "id": dev_id,
+            "addr":XBEE.get('addr'),
+            "route":1,
+            "lat":dev_coor.get('lat'),
+            "lng":dev_coor.get('lng'),
+            "alt":dev_coor.get('alt')}
+    for b in bases:
+        if bases[b].get("check") == None:
+            bases[b]['check'] = 2
+        else:
+            if bases[b].get("check") == 0:
+                del bases[b]
+            else:
+                bases[b]['check'] = bases[b]['check'] - 1
+    print "\t\tAfter"
+    print "\t\t\tbases: %s" % repr(bases)
+    broadcast_enc_pub(glob_id, json.dumps(m))
 
-def send_reply_ping():
-    coor = get_coordinates()
-    m = {'code': UPDATE, 'id': dev_id, "lat": coor.get('lat'), "lng": coor.get('lng')}
-    os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), glob_id))
+def send_reply_ping(data):
+    print bases
+    print_info(data)
+    print "\t\tBefore"
+    print "\t\t\tbases: %s" % repr(bases)
+    if bases.get(data.get('id')) == None:
+        # add to the base with out route 1 and in route 2
+        bases[data.get('id')] = {
+                "lat":data.get('lat'),
+                "lng":data.get('lng'),
+                "alt":data.get('alt'),
+                "addr":binascii.unhexlify(data.get('addr')),
+                "in":1,
+                "out":2,
+                "paths": {
+                        "1": None,
+                        "2": None,
+                        "3": None
+                    }
+            }
+        m = {
+                'code': UPDATE,
+                'id': dev_id,
+                "addr":XBEE.get('addr'),
+                "lat": dev_coor.get('lat'),
+                "lng": dev_coor.get('lng'),
+                "alt": dev_coor.get('alt'),
+                "route":2
+            }
+        print "\t\tAfter"
+        print "\t\t\tbases: %s" % repr(bases)
+        broadcast_enc_pub(data.get('id'), json.dumps(m))
+    #TODO   Bases is cleared when a system goes down. Hence, when it reboots and sends a ping, the others won't reply with their information. 
+    #       we need to have the others send a reply. 
+    #       This could lead to cycle of send_replies. May need a new state that updates but does not reply
     db(REPLY_PING)
-    broadcast_enc_pub()
 
 def update_map(data):
-    mapa[data.get("id")] = {"lat": data.get("lat"), "lng": data.get("lng")}
+    global bases
+    print_info(data)
+    print "\t\tBefore"
+    print "\t\t\tbases: %s" % repr(bases)
+    if bases.get(data.get('id')) == None:
+        # add to the base with out route 1 and in route 2
+        bases[data.get('id')] = {
+                "lat":data.get('lat'),
+                "lng":data.get('lng'),
+                "alt":data.get('alt'),
+                "addr":binascii.unhexlify(data.get('addr')),
+                "in":2,
+                "out":1,
+                "paths": {
+                        "1": None,
+                        "2": None,
+                        "3": None
+                    }
+            }
+    # reset
+    if bases.get(data.get('id')).get('check') != None:
+        bases[data.get('id')]['check'] = 2
     db(UPDATE)
+    print "\t\tAfter"
+    print "\t\t\tbases: %s" % repr(bases) 
 
 def send_global_ping():
-    m = {'code': PROPOGATE, 'id': dev_id, "data":{}, "q": [], "t": [dev_id]}
-    os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), glob_id))
+    m = {'code': PROPOGATE, 'og':dev_id, 'id': dev_id, "data":{}, "q": [], "t": []}
     db(GLOBAL_PING)
-    broadcast_enc_pub()
+    broadcast_enc_pub(glob_id, json.dumps(m))
 
 def send_propogate(data):
+    print_info(data)
     ID = data.get('id')
-    d = data.get('data')
-    q = data.get('q')
-    t = data.get('t')
-
-    for key in mapa.keys():
+    d = data.get('data')    # data
+    q = data.get('q')       # queue of bases to visit
+    t = data.get('t')       # trace of path taken
+    for key in bases.keys():
+        # add based to queue only if does not exist in queue, trace, and data
         if key not in q and key not in t and data.get(key) == None:
             q.append(key)
-    coor = get_coordinates()
     if d.get(dev_id) == None:
-        d[dev_id] = {"lat": coor.get('lat'), "lng": coor.get('lng')}
-
-    m = {'code': PROPOGATE, 'id': dev_id, "data":d, "q": q}
-    if mapa.get(q[0]) == None:
+        d[dev_id] = {"lat": dev_coor.get('lat'), "lng": dev_coor.get('lng'), "alt": dev_coor.get('alt'), "links":bases.keys()}
+    
+    if dev_id == data.get('og'):
+        d[dev_id] = {"lat": dev_coor.get('lat'), "lng": dev_coor.get('lng'), "alt": dev_coor.get('alt'), "links":bases.keys()}
+        data = []
+        for key in d:
+            d.get(key)["base"] = key
+            data.append(d.get(key))
+        with open('map.pub', 'w') as fn:
+            fn.write(json.dumps(data))
+        return
+ 
+    m = {'code': PROPOGATE, 'og':data.get('og'), 'id': dev_id, "data":d, "q": q, "t":t}
+    #TODO Pending more tests, this closed out programs
+    if len(q) == 0:
+        # if queue is empty, go back in trace
         i = t.pop()
         m['t'] = t
-        os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), i))
+        recipient = i
+    elif bases.get(q[0]) == None:
+        # if queue item 1 exists in bases, go back in trace
+        i = t.pop()
+        m['t'] = t
+        recipient = i
     else:
         t.append(dev_id)
         m['q'] = q[1:]
         m['t'] = t
-        os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), q[0]))
+        recipient = q[0]
+
     db(PROPOGATE)
-    broadcast_enc_pub()
+    #TODO Could fail, may need glob_id instead of recipient
+    #broadcast_enc_pub(recipient, json.dumps(m))
+    broadcast_enc_pub(glob_id, json.dumps(m))
 
 def start_take_off(data):
+    print_info(data)
     m = {
-            'code': TAKE_OFF, 
-            'lat':base.get(data.get('base')).get('lat'),
-            "lng":base.get(data.get('base')).get('lat')
+            'code': TAKE_OFF,
+            'lat': bases.get(data.get('base')).get('lat'),
+            "lng": bases.get(data.get('base')).get('lat'),
+            "alt": dev_coor.get('alt') + (bases[data.get('base')].get('out') * base_alt),
+            'id': dev_id
         }
-    os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')))
+    #TODO add drone to internal memory
+    #TODO could benefit from send_direct code for horizontal laning
     db(START_TAKE_OFF)
-    broadcast_enc_pub()
+    broadcast_enc_pub(data.get('id'), json.dumps(m))
 
 def send_flight_plan(data):
+    global drones
+    print_info(data)
+    print "\t\tBefore"
+    print "\t\t\tdrones: %s" % repr(drones)
     m = {
-            'code': CONFIRM_FP, 
-            'flight_plan': data.get('flight_plan')
+            'code': CONFIRM_FP,
+            'flight_plan': data.get('flight_plan'),
+            'addrs': data.get('addrs'),
+            'drone': data.get('drone'),
+            'id': dev_id
         }
-    os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), data.get('id')))
+    drones[data.get('drone')] = {"addr": binascii.unhexlify(data.get('addr'))}
     db(SEND_FP)
-    broadcast_enc_pub()
-
-def trigger_request():
-    global request
-    threading.Timer(100, trigger_request)
-    request = True
+    print "\t\tAfter"
+    print "\t\t\tdrones: %s" % repr(drones)
+    broadcast_enc_pub(data.get('drone'), json.dumps(m))
 
 def request_status():
     global request
@@ -321,68 +568,162 @@ def request_status():
             'code': REPLY_STATUS,
             'id': dev_id
             }
-        os.system("./encrypt '%s' %s  < param/a3.param" % (json.dumps(m), drone))
-        broadcast_enc_pub()
+        broadcast_enc_pub(drone, json.dumps(m))
     request = False
-     
+
 def check_status(data):
-   coors = get_coordinates()
-   coor1 = (coors.get('lat'), coors.get('lng'))
-   coor2 = (data.get('lat'), data.get('lng'))
-   if not geopy.distance.distance(coor1, coor2).miles > 0:
-       send_directon(data) 
-       pass
-
-# Find Devices
-if find_device(GPS):
-    if not startGPS(GPS):
-        print GPS
-        print "GPS Connection Failed"
-        exit()
-else:
-    print "GPS not found"
-    exit()
-
-trigger_request()
-
-while run:
-    data = get_state_from_enc_pub()
-    code = data.get('code')
-    debug = data.get('debug', False)
-    
-    # Every Once in a while, check in with all drones currentlying moving 
-    if request:
-        request_status()
-
-    # set timer to fire send_ping()
-    if code == IDLE:
-        idle()
-    elif code == SEND_CONFIRM:
-        send_connection_confirmation(data)
-    elif code == SEND_DIRECT:
-        send_directions(data)
-    elif code == RELEASE_MSG:
-        send_release_msg(data)
-    elif code == FORWARD:
-        forward_release_msg(data)
-    elif code == RELEASE_ACC:
-        send_release_acceptance(data)
-    elif code == PING:
-        send_ping()
-    elif code == REPLY_PING:
-        send_reply_ping()
-    elif code == UPDATE:
-        update_map(data)
-    elif code == GLOBAL_PING:
-        send_global_ping()
-    elif code == PROPOGATE:
-        send_propogate(data)
-    elif code == START_TAKE_OFF:
-        start_take_off(data)
-    elif code == SEND_FP:
-        send_flight_plan(data)
-    elif code == CHECK_STATUS:
-        check_status(data)
-    else:
+    print_info(data)
+    coor1 = (dev_coor.get('lat'), dev_coor.get('lng'))
+    coor2 = (data.get('lat'), data.get('lng'))
+    if not distance.distance(coor1, coor2).miles > 0:
+        send_directon(data)
         pass
-        #print 'Code Not Found'
+
+#
+#   Start Script
+#
+
+# Get ID Name
+try:
+    with open("id.pub") as fn:
+        dev_id = fn.read()
+except:
+    exit("id.pub was not found")
+
+# Get Global Id
+try:
+    with open("global.pub") as fn:
+        glob_id = fn.read()
+except:
+    exit("global.pub was not found")
+
+print "/*** Starting Base"
+print "\tdev_id  \t%s" % dev_id
+print "\tglob_id \t%s" % glob_id
+
+# Find GPS
+#if find_device(GPS):
+#    if not startGPS(GPS):
+#        exit("GPS Failed to Connect")
+#else:
+#    exit("GPS not found")
+
+if GPS.get('session') == None:
+    print '\tGPS not found'
+else:
+    print "\tGPS found at %s" % GPS.get('port')
+
+# Find XBEE
+if find_device(XBEE):
+    if not startXBEE(XBEE):
+        exit("XBEE Failed to Connect")
+else:
+    exit("XBEE not Found")
+
+if XBEE.get('session') == None:
+    print '\tXBEE not found'
+else:
+    print "\tXBEE found at %s" % XBEE.get('port')
+    print "\t\taddr: %s" % repr(XBEE.get('addr'))
+
+# Send Xbee info to Central base
+m = {"addr":XBEE.get('addr'), "dev":dev_id}
+sp.call(["curl", "-f", "-s", "10.0.1.72:5000/xbee_info", "-X", "POST", "-d", json.dumps(m)], shell=False)
+
+dev_coor = get_coordinates()
+print "\tStarting Position"
+print "\t\tlatitude:  %f" % dev_coor.get('lat')
+print "\t\tlongitude: %f" % dev_coor.get('lng')
+print "\t\taltitude:  %f" % dev_coor.get('alt')
+
+
+print "\tStarting triggers"
+# Start Triggers
+#TODO Turn back one
+#trigger_request()
+#trigger_ping()
+
+print "\tSending Startup Ping"
+# On bootup, send Ping
+send_ping()
+
+print "\n/*** Starting Machine"
+try:
+    while run:
+        data = get_state_from_enc_pub()
+        code = data.get('code')
+        debug = data.get('debug', False)
+
+        # Every Once in a while, check in with all drones currentlying moving
+        if request:
+            request_status()
+
+        # Once in while, check try to update base map
+        if ping:
+            send_ping()
+
+        # Send Flight Plan if available
+        if os.path.isfile("flight_plan.pub"):
+            with open("flight_plan.pub") as fn:
+                fp_data = json.load(fn)
+            print "\tSEND_FP"
+            send_flight_plan(fp_data)
+            os.remove("flight_plan.pub")
+
+        # Send Global Ping if available
+        if os.path.isfile("update.pub"):
+            with open("update.pub") as fn:
+                fp_data = json.load(fn)
+            print "\tGLOBAL_PING"
+            send_global_ping()
+            os.remove("update.pub")
+
+
+        if code == IDLE:
+            print "\tIDLE"
+            idle()
+        elif code == SEND_CONFIRM:
+            print "\tSEND_CONFIRM"
+            send_connection_confirmation(data)
+        elif code == SEND_DIRECT:
+            print "\tSEND_DIRECT"
+            send_directions(data)
+        elif code == RELEASE_MSG:
+            print "\tRELEASE_MSG"
+            send_release_msg(data)
+        elif code == FORWARD:
+            print "\tFORWARD"
+            forward_release_msg(data)
+        elif code == RELEASE_ACC:
+            print "\tRELEASE_ACC"
+            send_release_acceptance(data)
+        elif code == PING:
+            print "\tPING"
+            send_ping()
+        elif code == REPLY_PING:
+            print "\tREPLY_PING"
+            send_reply_ping(data)
+        elif code == UPDATE:
+            print "\tUPDATE"
+            update_map(data)
+        elif code == GLOBAL_PING:
+            print "\tGLOBAL_PING"
+            send_global_ping()
+        elif code == PROPOGATE:
+            print "\tPROPOGATE"
+            send_propogate(data)
+        elif code == START_TAKE_OFF:
+            print "\tSTART_TAKE_OFF"
+            start_take_off(data)
+        elif code == SEND_FP:
+            print "\tSEND_FP"
+            send_flight_plan(data)
+        elif code == CHECK_STATUS:
+            print "\tCHECK_STATUS"
+            check_status(data)
+        else:
+            pass
+        time.sleep(1)
+except(KeyboardInterrupt):
+    XBEE.get('session').close()
+    exit()

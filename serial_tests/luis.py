@@ -1,5 +1,5 @@
 from Comms import Comms
-import threading, time, serial.tools.list_ports, json
+import threading, time, serial.tools.list_ports, json, binascii
 
 XBEE = {
     "vid": ["0403"],
@@ -20,54 +20,44 @@ def find_device(device):
               return True
     return False
 
-def bytecode_to_hex(bytecode):
-    s = ""
-    #for byte in bytearray(str.encode(bytecode)):
-    for byte in bytearray(bytecode):
-        s = "%s-%s" % (s, "%02X" % (byte))
-    return s
-
+BAUDRATE = 9600
 SERIAL_XB01_LOW = '\x41\x67\x21\xA9'
 SERIAL_XB22_LOW = '\x41\x75\xBC\x88'
 SERIAL_NUM_HIGH = '\x00\x13\xA2\x00' #same for all devices
+
 try:
     if find_device(XBEE):
         xb   = Comms(XBEE.get('port'), data_only=True)
 except:
     exit("Xbee connection Failed")
 
-print "/** Prechecks"
 self = xb.getLocalAddr()
-print "\tMailbox empty? " + str(xb.isMailboxEmpty())
-print "\tmessage count: " + str(xb.messageCount())
 
 print "\n/** Sending Messages"
-data1 = "hey there! 1"
-data2 = "hey there! 2"
-<<<<<<< HEAD
-data3 = bytecode_to_hex(self[0])+bytecode_to_hex(self[1])
-dest = SERIAL_NUM_HIGH + SERIAL_XB01_LOW #XB22 -> XB01
-#xb.sendData(dest=dest, data = data1)
-#xb.sendData(dest=dest, data = data2)
-xb.broadcastData('{"code":"PING", "addr": "%s"}' % data3)
-print "\tXB22 sent two messages..."
+addr = self[0] + self[1]
+print addr
+print repr(addr)
+data3 = binascii.hexlify(self[0]) + binascii.hexlify(self[1])
+xb.sendData(addr, '{"code":"PING", "addr": "%s"}' % data3)
+
 
 print "\n/** Reading Messages"
 target = None
 try:
     while True:
         if not xb.isMailboxEmpty():
-            data = json.loads(xb.readMessage().get('rx'))
+            d = xb.readMessage().get('rx')
+            data = json.loads(d)
             print data
-            if data == "PING":
-                target = data.get('addr')
+            if data.get('code') == "PING":
+                target = binascii.unhexlify(data.get('addr'))
                 print target
-                data4 = bytecode_to_hex(self[0])+bytecode_to_hex(self[1])
-                xb.sendData(dest=target.replace("-","\\x"), data='{"code":"REPLY","addr":"%s"}' % data4)
+                xb.sendData(dest=target, data='{"code":"REPLY","addr":"%s"}' % data.get('addr'))
+                print "dank"
             elif data.get('code') == "REPLY":
-                reply = xb.readMessage()
-                print reply
+                break
 except (KeyboardInterrupt):
     xb.close()
     exit()
+    
 
