@@ -362,7 +362,7 @@ def forward_release_msg(data):
             'id': data.get('id'),
             'base': dev_id
         }
-    db(FROWARD)
+    db(FORWARD)
     print "\t\tAfter"
     print "\t\t\tmsgs:   %s" % repr(msgs)
     print "\t\t\tdrones: %s" % repr(drones)

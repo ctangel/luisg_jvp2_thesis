@@ -257,6 +257,7 @@ def send_msg(data, baseID, nextBaseID):
     broadcast_enc_pub(nextBaseID, json.dumps(m))
 
 def move_to_base(data):
+    global target
     print_info(data)
     # Upload the final waypoint
     trgt = target["waymarks"][-1]
@@ -421,7 +422,7 @@ try:
             print "TAKE_OFF"
             PREV_STATE = TAKE_OFF
             take_off(data)
-            PREV_STATE = MOVE
+            PREV_STATE = ASK_DIRECT
         elif code == CONFIRM:
             print "CONFIRM"
             PREV_STATE = CONFIRM
