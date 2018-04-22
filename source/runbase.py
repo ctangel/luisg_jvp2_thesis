@@ -184,7 +184,7 @@ def startGPS(device):
     if gps3:
         # Checking if GPS is Connected to Socket
         try:
-            os.system("gpsd %s" % (device['port']))
+            os.system("/usr/local/sbin/gpsd %s" % (device['port']))
             device['session'] = gps.GPSDSocket()
             device['session'].connect()
             device['session'].watch()
@@ -640,11 +640,11 @@ print "\tdev_id  \t%s" % dev_id
 print "\tglob_id \t%s" % glob_id
 
 # Find GPS
-#if find_device(GPS):
-#    if not startGPS(GPS):
-#        exit("GPS Failed to Connect")
-#else:
-#    exit("GPS not found")
+if find_device(GPS):
+    if not startGPS(GPS):
+        exit("GPS Failed to Connect")
+else:
+    exit("GPS not found")
 
 if GPS.get('session') == None:
     print '\tGPS not found'
