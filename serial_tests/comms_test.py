@@ -44,7 +44,6 @@ print "\tmessage count: " + str(xb.messageCount())
 print "\n/** Sending Messages"
 data1 = "hey there! 1"
 data2 = "hey there! 2"
-<<<<<<< HEAD
 data3 = bytecode_to_hex(self[0])+bytecode_to_hex(self[1])
 dest = SERIAL_NUM_HIGH + SERIAL_XB01_LOW #XB22 -> XB01
 #xb.sendData(dest=dest, data = data1)
@@ -70,4 +69,3 @@ try:
 except (KeyboardInterrupt):
     xb.close()
     exit()
-

@@ -5,11 +5,9 @@ sys.path.append('../serial_tests'); import getPixhawkPort as getPort
 
 #Find the Vehcle
 path = getPort.find_device(getPort.pixhawk)
-
 parser = argparse.ArgumentParser()
 parser.add_argument('--connect', default=path)
 args = parser.parse_args()
-exit()
 
 #Connect to the Vehicle
 print 'Connecting to vehicle on %s' %args.connect
@@ -23,6 +21,13 @@ def arm_and_takeoff(aTargetAltitude):
     while not vehicle.is_armable:
         print 'Waiting for vehicle to initialise...'
         time.sleep(3)
+
+    #Clear any previous commands/missions before takeoff
+    cmds = vehicle.commands
+    cmds.download()
+    cmds.wait_ready()
+    vehicle.commands.clr()
+    vehicle.commands.upload()
 
     print 'Arming motors'
 
@@ -44,18 +49,21 @@ def arm_and_takeoff(aTargetAltitude):
         if vehicle.location.global_relative_frame.alt >= aTargetAltitude*0.95:
             print "Reached target altitude"
             break
-            time.sleep(1)
+        time.sleep(1)
 
 #Initialize the takeoff sequence to 20m
-arm_and_takeoff(20)
+arm_and_takeoff(sys.argv[1])
 
 print("Take off complete")
 
-#Hover for 10 seconds
-time.sleep(10)
+#Hover for 5 seconds
+time.sleep(sys.argv[2])
 
 print("Now let's land")
 vehicle_mode = VehicleMode("LAND")
+
+while vehicle.armed:
+    time.sleep(1)
 
 #Close Vehicle Object
 vehicle.close()
