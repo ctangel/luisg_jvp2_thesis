@@ -6,9 +6,16 @@ sys.path.append('../serial_tests'); import getPixhawkPort as getPort
 #Find the Vehcle
 path = getPort.find_device(getPort.pixhawk)
 
+<<<<<<< HEAD
 #parser = argparse.ArgumentParser()
 #parser.add_argument('--connect', default=path) #TODO: what does this do?
 #args = parser.parse_args()
+=======
+parser = argparse.ArgumentParser()
+parser.add_argument('--connect', default=path)
+args = parser.parse_args()
+exit()
+>>>>>>> 4d6f30b5b5ec314507d34351bf4418b261cc2170
 
 #Connect to the Vehicle
 #print 'Connecting to vehicle on %s' %args.connect
@@ -56,9 +63,16 @@ def arm_and_takeoff(aTargetAltitude):
         if vehicle.location.global_relative_frame.alt >= aTargetAltitude*0.95:
             print "Reached target altitude"
             break
+<<<<<<< HEAD
         time.sleep(1)
 #Initialize the takeoff sequence to alt meters
 arm_and_takeoff(alt)
+=======
+            time.sleep(1)
+
+#Initialize the takeoff sequence to 20m
+arm_and_takeoff(20)
+>>>>>>> 4d6f30b5b5ec314507d34351bf4418b261cc2170
 
 print("Take off complete")
 

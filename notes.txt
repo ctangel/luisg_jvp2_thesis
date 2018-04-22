@@ -1,0 +1,5 @@
+TODO, FIXME, CHANGED, XXX, IDEA, HACK, NOTE, REVIEW, NB, BUG, QUESTION, COMBAK, TEMP
+^ those are all the highlights for atom just FYI
+
+When establishing network, you need to send a test message until you get a response.
+Then you know that the network is established
