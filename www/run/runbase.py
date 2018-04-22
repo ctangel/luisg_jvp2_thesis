@@ -18,11 +18,16 @@ import math
 from geopy import distance
 import binascii
 import time
-#import gps
 import serial.tools.list_ports
 import subprocess as sp
 import Comms
 
+try:
+    import gps
+    gps3 = False
+except:
+    from gps3 import gps3 as gps
+    gps3 = True
 # CODES
 IDLE            = 'a'
 SEND_CONFIRM    = 'b'
@@ -136,16 +141,30 @@ def get_distance(coor1, coor2):
 
 def get_coordinates():
     data = {'lat': None, 'lng': None, 'alt':None}
-    #TODO Remove, used in tested
-    return {"lat": 40.3470190911147, "lng":-74.66142010205618, "alt":12}
-    if GPS.get('session') != None:
-        report = GPS['session'].next()
-        if report.get('class') == 'TPV':
-            if hasattr(report, 'lat') and hasattr(report, 'lon'):
-                data['lat'] = report.lat
-                data['lng'] = report.lon
-                data['alt'] = report.alt
-    return data
+    if gps3:
+        if GPS.get('session') != None:
+            while True:
+                time.sleep(1)
+                report = GPS['session'].next()
+                print report
+                if report != None:
+                    report = json.loads(report)
+                    if report.get('class') == "TPV":
+                        if report.get('lat') != None and report.get('lon') != None:
+                            data['lat'] = report.get('lat')
+                            data['lng'] = report.get('lon')
+                            data['alt'] = report.get('alt')
+                            break
+        return data
+    else:
+        if GPS.get('session') != None:
+            report = GPS['session'].next()
+            if report.get('class') == 'TPV':
+                if hasattr(report, 'lat') and hasattr(report, 'lon'):
+                    data['lat'] = report.lat
+                    data['lng'] = report.lon
+                    data['alt'] = report.alt
+        return data
 
 
 def trigger_request():
@@ -162,36 +181,56 @@ def startGPS(device):
     """ Sets up and establishes a connection with the provided gps device.
         If connection is successful, it returns true, else false"""
     # Checking if GPS is Connected to Socket
-    try:
-        child = sp.Popen("pgrep -a gpsd", shell=True, stdin=sp.PIPE, stdout=sp.PIPE, stderr=sp.PIPE)
-        output, err = child.communicate()
-        if device['port'] not in output and output != '':
-            # Killing Existing GPS Socket Connection
-            os.system("sudo killall -q gpsd")
-
-        if device['port'] not in output:
-            # Connecting GPS to Socket
-            os.system("gpsd %s" % (device['port']))
-    except:
-        # GPS Failed to Connect to Socket
-        return False
-
-    # Checking if gps session is valid
-    while True:
-        time.sleep(1)
+    if gps3:
+        # Checking if GPS is Connected to Socket
         try:
-            device['session'] = gps.gps("localhost", "2947")
-            break
-        except:
-            sp.check_call("sudo killall -q gpsd", shell=True)
             os.system("gpsd %s" % (device['port']))
-    device['session'].stream(gps.WATCH_ENABLE | gps.WATCH_NEWSTYLE)
-    report = device['session'].next()
-    # Locking onto GPS
-    while report.get('mode') != 3:
-        time.sleep(1)
+            device['session'] = gps.GPSDSocket()
+            device['session'].connect()
+            device['session'].watch()
+        except:
+            # GPS Failed to Connect to Socket
+            return False
+
+        while True:
+            time.sleep(1)
+            report = device['session'].next()
+            if report != None:
+                report = json.loads(report)
+                if report.get('class') == "TPV":
+                    break
+        return True
+    else:
+        try:
+            child = sp.Popen("pgrep -a gpsd", shell=True, stdin=sp.PIPE, stdout=sp.PIPE, stderr=sp.PIPE)
+            output, err = child.communicate()
+            if device['port'] not in output and output != '':
+                # Killing Existing GPS Socket Connection
+                os.system("sudo killall -q gpsd")
+
+            if device['port'] not in output:
+                # Connecting GPS to Socket
+                os.system("gpsd %s" % (device['port']))
+        except:
+            # GPS Failed to Connect to Socket
+            return False
+
+        # Checking if gps session is valid
+        while True:
+            time.sleep(1)
+            try:
+                device['session'] = gps.gps("localhost", "2947")
+                break
+            except:
+                sp.check_call("sudo killall -q gpsd", shell=True)
+                os.system("gpsd %s" % (device['port']))
+        device['session'].stream(gps.WATCH_ENABLE | gps.WATCH_NEWSTYLE)
         report = device['session'].next()
-    return True
+        # Locking onto GPS
+        while report.get('mode') != 3:
+            time.sleep(1)
+            report = device['session'].next()
+        return True
 
 def startXBEE(device):
     try:
@@ -247,7 +286,6 @@ def print_info(data):
     print "\t\tReceived..."
     for key in data:
         print "\t\t\t%s\t\t%s" %(key, repr(data.get(key)))
-    
 
 #
 #   State Methods
@@ -261,7 +299,7 @@ def send_connection_confirmation(data):
     global drones
     print_info(data)
     print "\t\tBefore"
-    print "\t\t\tdrone: %s" % repr(drones)  
+    print "\t\t\tdrone: %s" % repr(drones)
     m = {'code': ASK_DIRECT, 'id': dev_id, 'data': 'OK'}
     if data.get('id') not in drones:
         drones[data.get('id')] = {"addr": binascii.unhexlify(data.get('addr'))}
@@ -274,7 +312,7 @@ def send_directions(data):
     global bases
     print_info(data)
     print "\t\tBefore"
-    print "\t\t\tbases: %s" % repr(bases) 
+    print "\t\t\tbases: %s" % repr(bases)
     b = bases.get(data.get('base'))
     if b == None:
         #TODO Handle Situation when base provided is not in recognized by the base
@@ -446,8 +484,8 @@ def send_reply_ping(data):
         print "\t\tAfter"
         print "\t\t\tbases: %s" % repr(bases)
         broadcast_enc_pub(data.get('id'), json.dumps(m))
-    #TODO   Bases is cleared when a system goes down. Hence, when it reboots and sends a ping, the others won't reply with their information. 
-    #       we need to have the others send a reply. 
+    #TODO   Bases is cleared when a system goes down. Hence, when it reboots and sends a ping, the others won't reply with their information.
+    #       we need to have the others send a reply.
     #       This could lead to cycle of send_replies. May need a new state that updates but does not reply
     db(REPLY_PING)
 
@@ -476,7 +514,7 @@ def update_map(data):
         bases[data.get('id')]['check'] = 2
     db(UPDATE)
     print "\t\tAfter"
-    print "\t\t\tbases: %s" % repr(bases) 
+    print "\t\t\tbases: %s" % repr(bases)
 
 def send_global_ping():
     m = {'code': PROPOGATE, 'og':dev_id, 'id': dev_id, "data":{}, "q": [], "t": []}
@@ -495,7 +533,7 @@ def send_propogate(data):
             q.append(key)
     if d.get(dev_id) == None:
         d[dev_id] = {"lat": dev_coor.get('lat'), "lng": dev_coor.get('lng'), "alt": dev_coor.get('alt'), "links":bases.keys()}
-    
+
     if dev_id == data.get('og'):
         d[dev_id] = {"lat": dev_coor.get('lat'), "lng": dev_coor.get('lng'), "alt": dev_coor.get('alt'), "links":bases.keys()}
         data = []
@@ -505,7 +543,7 @@ def send_propogate(data):
         with open('map.pub', 'w') as fn:
             fn.write(json.dumps(data))
         return
- 
+
     m = {'code': PROPOGATE, 'og':data.get('og'), 'id': dev_id, "data":d, "q": q, "t":t}
     #TODO Pending more tests, this closed out programs
     if len(q) == 0:

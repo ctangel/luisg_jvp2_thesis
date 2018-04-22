@@ -25,7 +25,6 @@ from pymavlink import mavutil
 import argparse, sys
 
 
-#TODO: This thing needs to land....
 # CODES
 CONFIRM         = 'l'
 DIRECT          = 'm'
