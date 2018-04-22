@@ -162,8 +162,10 @@ def broadcast_enc_pub(dest=None, data=None):
     print bases
     print drones
     if dest == glob_id:
+        print "sending to %s at %s" % (dest, Comms.Comms.BROADCAST)
         XBEE.get('session').sendData(Comms.Comms.BROADCAST, data, None, dest)
     elif bases.get(dest) != None:
+        print "sending to %s at %s" % (dest, repr(bases.get(dest).get('addr')))
         XBEE.get('session').sendData(bases.get(dest).get('addr'), data, None, dest)
     elif drones.get(dest) != None:
         print "sending to %s at %s" % (dest, repr(drones.get(dest).get('addr')))
