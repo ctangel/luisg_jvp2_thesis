@@ -30,7 +30,7 @@ def arm_and_takeoff(aTargetAltitude):
     cmds = vehicle.commands
     cmds.download()
     cmds.wait_ready()
-    vehicle.commands.clr()
+    vehicle.commands.clear()
     vehicle.commands.upload()
 
     print 'Arming motors'
@@ -43,6 +43,7 @@ def arm_and_takeoff(aTargetAltitude):
     while not vehicle.armed:
         print "Waiting for arming..."
         time.sleep(3)
+        vehicle.armed = True
 
 
 #    while not vehicle.mode.name=='GUIDED' and not vehicle.armed and not api.exit:
@@ -62,23 +63,20 @@ def arm_and_takeoff(aTargetAltitude):
         time.sleep(1)
 
 #Initialize the takeoff sequence to 20m
-arm_and_takeoff(sys.argv[1])
-
-print("Take off complete")
-
-#Hover for 5 seconds
-time.sleep(sys.argv[2])
+arm_and_takeoff(int(sys.argv[1]))
 
 print("Take off complete")
 
 #Hover for hov seconds
-time.sleep(hov)
+#time.sleep(int(sys.argv[2]))
 
-
+print("Take off complete")
+time.sleep(1)
 print("Now let's land")
-vehicle_mode = VehicleMode("LAND")
+vehicle.mode = VehicleMode("LAND")
 
 while vehicle.armed:
+    vehicle_mode = VehicleMode("LAND")
     time.sleep(1)
 
 #Close Vehicle Object
