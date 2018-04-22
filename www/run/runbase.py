@@ -21,13 +21,8 @@ import time
 import serial.tools.list_ports
 import subprocess as sp
 import Comms
+from gps3 import gps3 as gps
 
-try:
-    import gps
-    gps3 = False
-except:
-    from gps3 import gps3 as gps
-    gps3 = True
 # CODES
 IDLE            = 'a'
 SEND_CONFIRM    = 'b'
@@ -73,6 +68,7 @@ request         = False
 ping            = False
 base_alt        = 5
 dev_coor        = None
+disableGPS      = True
 
 # GPS Device Information
 GPS = {
@@ -84,8 +80,8 @@ GPS = {
 
 # XBEE Device Information
 XBEE = {
-    "vid":      ["0403"],
-    "pid":      ["6015"],
+    "vid":      ["0403", "10C4"],
+    "pid":      ["6015", "EA60"],
     "port":     None,
     "addr":     None,
     "session":  None
@@ -141,7 +137,7 @@ def get_distance(coor1, coor2):
 
 def get_coordinates():
     data = {'lat': None, 'lng': None, 'alt':None}
-    if gps3:
+    if not disableGPS:
         if GPS.get('session') != None:
             while True:
                 time.sleep(1)
@@ -155,17 +151,9 @@ def get_coordinates():
                             data['lng'] = report.get('lon')
                             data['alt'] = report.get('alt')
                             break
-        return data
     else:
-        if GPS.get('session') != None:
-            report = GPS['session'].next()
-            if report.get('class') == 'TPV':
-                if hasattr(report, 'lat') and hasattr(report, 'lon'):
-                    data['lat'] = report.lat
-                    data['lng'] = report.lon
-                    data['alt'] = report.alt
-        return data
-
+        data = {'lat': 40.7357, 'lng': -74.1724, 'alt':3}
+    return data
 
 def trigger_request():
     global request
@@ -174,63 +162,33 @@ def trigger_request():
 
 def trigger_ping():
     global ping
-    threading.Timer(100, trigger_ping)
+    #threading.Timer(10, trigger_ping)
     ping = True
 
 def startGPS(device):
     """ Sets up and establishes a connection with the provided gps device.
         If connection is successful, it returns true, else false"""
     # Checking if GPS is Connected to Socket
-    if gps3:
-        # Checking if GPS is Connected to Socket
-        try:
-            os.system("/usr/local/sbin/gpsd %s" % (device['port']))
-            device['session'] = gps.GPSDSocket()
-            device['session'].connect()
-            device['session'].watch()
-        except:
-            # GPS Failed to Connect to Socket
-            return False
-
-        while True:
-            time.sleep(1)
-            report = device['session'].next()
-            if report != None:
-                report = json.loads(report)
-                if report.get('class') == "TPV":
-                    break
+    if disableGPS:
         return True
-    else:
-        try:
-            child = sp.Popen("pgrep -a gpsd", shell=True, stdin=sp.PIPE, stdout=sp.PIPE, stderr=sp.PIPE)
-            output, err = child.communicate()
-            if device['port'] not in output and output != '':
-                # Killing Existing GPS Socket Connection
-                os.system("sudo killall -q gpsd")
+    try:
+        os.system("/usr/local/sbin/gpsd %s" % (device['port']))
+        os.system("/usr/sbin/gpsd %s" % (device['port']))
+        device['session'] = gps.GPSDSocket()
+        device['session'].connect()
+        device['session'].watch()
+    except:
+        # GPS Failed to Connect to Socket
+        return False
 
-            if device['port'] not in output:
-                # Connecting GPS to Socket
-                os.system("gpsd %s" % (device['port']))
-        except:
-            # GPS Failed to Connect to Socket
-            return False
-
-        # Checking if gps session is valid
-        while True:
-            time.sleep(1)
-            try:
-                device['session'] = gps.gps("localhost", "2947")
-                break
-            except:
-                sp.check_call("sudo killall -q gpsd", shell=True)
-                os.system("gpsd %s" % (device['port']))
-        device['session'].stream(gps.WATCH_ENABLE | gps.WATCH_NEWSTYLE)
+    while True:
+        time.sleep(1)
         report = device['session'].next()
-        # Locking onto GPS
-        while report.get('mode') != 3:
-            time.sleep(1)
-            report = device['session'].next()
-        return True
+        if report != None:
+            report = json.loads(report)
+            if report.get('class') == "TPV":
+                break
+    return True
 
 def startXBEE(device):
     try:
@@ -249,6 +207,7 @@ def get_state_from_enc_pub():
     m = hashlib.md5()
     data = {"code": IDLE}
     msg = {}
+    print "/// *** %d ** \\\\\\" % XBEE.get('session').messageCount()
     if not XBEE.get('session').isMailboxEmpty():
         msg = XBEE.get('session').readMessage()
         if msg == None:
@@ -440,7 +399,8 @@ def send_ping():
             "lat":dev_coor.get('lat'),
             "lng":dev_coor.get('lng'),
             "alt":dev_coor.get('alt')}
-    for b in bases:
+    bases_copy = dict(bases)
+    for b in bases_copy:
         if bases[b].get("check") == None:
             bases[b]['check'] = 2
         else:
@@ -472,18 +432,18 @@ def send_reply_ping(data):
                         "3": None
                     }
             }
-        m = {
-                'code': UPDATE,
-                'id': dev_id,
-                "addr":XBEE.get('addr'),
-                "lat": dev_coor.get('lat'),
-                "lng": dev_coor.get('lng'),
-                "alt": dev_coor.get('alt'),
-                "route":2
-            }
-        print "\t\tAfter"
-        print "\t\t\tbases: %s" % repr(bases)
-        broadcast_enc_pub(data.get('id'), json.dumps(m))
+    m = {
+            'code': UPDATE,
+            'id': dev_id,
+            "addr":XBEE.get('addr'),
+            "lat": dev_coor.get('lat'),
+            "lng": dev_coor.get('lng'),
+            "alt": dev_coor.get('alt'),
+            "route":2
+        }
+    print "\t\tAfter"
+    print "\t\t\tbases: %s" % repr(bases)
+    broadcast_enc_pub(data.get('id'), json.dumps(m))
     #TODO   Bases is cleared when a system goes down. Hence, when it reboots and sends a ping, the others won't reply with their information.
     #       we need to have the others send a reply.
     #       This could lead to cycle of send_replies. May need a new state that updates but does not reply
@@ -540,6 +500,14 @@ def send_propogate(data):
         for key in d:
             d.get(key)["base"] = key
             data.append(d.get(key))
+        #TODO Needs to check if 1. New data's bases exists in existing map. If so, the value need to be updated with the new ones. 
+        if os.path.isfile('map.pub'):
+           with open('map.pub') as fn:
+            existing_map = json.load(fn)
+            for m in existing_map:
+                if m not in data:
+                    data.append(m)
+ 
         with open('map.pub', 'w') as fn:
             fn.write(json.dumps(data))
         return
@@ -569,6 +537,9 @@ def send_propogate(data):
 
 def start_take_off(data):
     print_info(data)
+    if data.get('base') == None:
+        #TODO Send Abort, the base the drone asked for exist
+        return
     m = {
             'code': TAKE_OFF,
             'lat': bases.get(data.get('base')).get('lat'),
@@ -640,7 +611,7 @@ print "\tdev_id  \t%s" % dev_id
 print "\tglob_id \t%s" % glob_id
 
 # Find GPS
-if find_device(GPS):
+if disableGPS or find_device(GPS):
     if not startGPS(GPS):
         exit("GPS Failed to Connect")
 else:
@@ -679,12 +650,12 @@ print "\tStarting triggers"
 # Start Triggers
 #TODO Turn back one
 #trigger_request()
-#trigger_ping()
+trigger_ping()
 
-print "\tSending Startup Ping"
+#print "\tSending Startup Ping"
 # On bootup, send Ping
-send_ping()
-
+#send_ping()
+timer = 0
 print "\n/*** Starting Machine"
 try:
     while run:
@@ -697,7 +668,9 @@ try:
             request_status()
 
         # Once in while, check try to update base map
-        if ping:
+        if ping or (timer % 10000) == 0:
+            print "\tPING"
+            timer = 0
             send_ping()
 
         # Send Flight Plan if available
@@ -716,52 +689,52 @@ try:
             send_global_ping()
             os.remove("update.pub")
 
-
         if code == IDLE:
-            print "\tIDLE"
+            #print "\tIDLE"
             idle()
         elif code == SEND_CONFIRM:
-            print "\tSEND_CONFIRM"
+            print "\n\tSEND_CONFIRM"
             send_connection_confirmation(data)
         elif code == SEND_DIRECT:
-            print "\tSEND_DIRECT"
+            print "\n\tSEND_DIRECT"
             send_directions(data)
         elif code == RELEASE_MSG:
-            print "\tRELEASE_MSG"
+            print "\n\tRELEASE_MSG"
             send_release_msg(data)
         elif code == FORWARD:
-            print "\tFORWARD"
+            print "\n\tFORWARD"
             forward_release_msg(data)
         elif code == RELEASE_ACC:
-            print "\tRELEASE_ACC"
+            print "\n\tRELEASE_ACC"
             send_release_acceptance(data)
         elif code == PING:
-            print "\tPING"
+            print "\n\tPING"
             send_ping()
         elif code == REPLY_PING:
-            print "\tREPLY_PING"
+            print "\n\tREPLY_PING"
             send_reply_ping(data)
         elif code == UPDATE:
-            print "\tUPDATE"
+            print "\n\tUPDATE"
             update_map(data)
         elif code == GLOBAL_PING:
-            print "\tGLOBAL_PING"
+            print "\n\tGLOBAL_PING"
             send_global_ping()
         elif code == PROPOGATE:
-            print "\tPROPOGATE"
+            print "\n\tPROPOGATE"
             send_propogate(data)
         elif code == START_TAKE_OFF:
-            print "\tSTART_TAKE_OFF"
+            print "\n\tSTART_TAKE_OFF"
             start_take_off(data)
         elif code == SEND_FP:
-            print "\tSEND_FP"
+            print "\n\tSEND_FP"
             send_flight_plan(data)
         elif code == CHECK_STATUS:
-            print "\tCHECK_STATUS"
+            print "\n\tCHECK_STATUS"
             check_status(data)
         else:
             pass
         time.sleep(1)
+        timer += 1
 except(KeyboardInterrupt):
     XBEE.get('session').close()
     exit()

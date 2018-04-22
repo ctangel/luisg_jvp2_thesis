@@ -83,8 +83,8 @@ PIXHAWK = {
 
 # XBEE Device Information
 XBEE = {
-    "vid":      ["0403"],
-    "pid":      ["6015"],
+    "vid":      ["0403", "10C4"],
+    "pid":      ["6015", "EA60"],
     "port":     None,
     "addr":     None,
     "session":  None
@@ -176,7 +176,6 @@ def print_info(data):
     print "\t\tReceived..."
     for key in data:
         print "\t\t\t%s\t\t%s" %(key, repr(data.get(key)))
- 
 
 #
 #   State Machtine
@@ -197,7 +196,7 @@ def direct(data):
     #checkout send_directions() in runbase.py
     global target
     print "\t\tBefore"
-    print "\t\t\ttarget: %s" % repr(target)    
+    print "\t\t\ttarget: %s" % repr(target)
     print_info(data)
     if fly:
         viehicle = PIXHAWK['session']
@@ -221,8 +220,8 @@ def direct(data):
         cmds.upload()
         vehicle.mode = VehicleMode("GUIDED")
     print "\t\tAfter"
-    print "\t\t\ttarget: %s" % repr(target)    
-    
+    print "\t\t\ttarget: %s" % repr(target)
+
     """
             msg = vehicle.message_factory.set_position_target_global_int_encode(
             0,       # time_boot_ms (not used)
@@ -301,18 +300,18 @@ def confirm_flight_plan(data):
     global bases
     print_info(data)
     print "\t\tBefore"
-    print "\t\t\tflight_plan: %s" % repr(flight_plan)  
-    print "\t\t\tflight_stop: %s" % repr(flight_stop)  
-    print "\t\t\tbases:       %s" % repr(bases)  
+    print "\t\t\tflight_plan: %s" % repr(flight_plan)
+    print "\t\t\tflight_stop: %s" % repr(flight_stop)
+    print "\t\t\tbases:       %s" % repr(bases)
     flight_stop = 1
     flight_plan = data.get('flight_plan')
     addrs = data.get('addrs')
     for i, base in enumerate(flight_plan):
         bases[base] = {"addr": binascii.unhexlify(addrs[i])}
     print "\t\tAfter"
-    print "\t\t\tflight_plan: %s" % repr(flight_plan)  
-    print "\t\t\tflight_stop: %s" % repr(flight_stop)  
-    print "\t\t\tbases:       %s" % repr(bases)  
+    print "\t\t\tflight_plan: %s" % repr(flight_plan)
+    print "\t\t\tflight_stop: %s" % repr(flight_stop)
+    print "\t\t\tbases:       %s" % repr(bases)
     if flight_plan != None:
         m = {'code': START_TAKE_OFF, 'id': dev_id, 'base': flight_plan[flight_stop]}
         db(CONFIRM_FP)
@@ -424,19 +423,20 @@ try:
             PREV_STATE = ASK_DIRECT
         elif code == CONFIRM:
             print "CONFIRM"
-            PREV_STATE = CONFIRM
-            broadcast_to_base(dev_id, flight_plan[flight_stop])
+            PREV_STATE = IDLE
+            broadcast_to_base(flight_plan[flight_stop-1])
         elif code == ASK_DIRECT:
             print "ASK_DIRECT"
             PREV_STATE = IDLE
             ask_for_direction(flight_plan[flight_stop-1], flight_plan[flight_stop])
         elif code == DIRECT:
             print "DIRECT"
-            PREV_STATE = DIRECT
+            PREV_STATE = IDLE
             direct(data)
             PREV_STATE = RELEASE
         elif code == RELEASE:
             print "RELEASE"
+            #TODO Try to Release
             PREV_STATE = IDLE
             release(flight_plan[flight_stop-1])
         elif code == SEND:
@@ -445,7 +445,7 @@ try:
             send_msg(data, flight_plan[flight_stop-1], flight_plan[flight_stop])
         elif code == MOVE:
             print "MOVE"
-            PREV_STATE = MOVE
+            PREV_STATE = IDLE
             move_to_base(data)
             flight_stop += 1
             if len(flight_plan) <= flight_stop:

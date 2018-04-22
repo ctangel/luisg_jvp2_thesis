@@ -1,1 +1,1 @@
-[{"lat": 40.3480190911147, "lng": -74.66242010205617, "base": "steve", "alt": 12, "links": ["central"]}, {"lat": 40.3470190911147, "lng": -74.66142010205618, "base": "central", "alt": 12, "links": ["steve"]}]
+[{"lat": 40.7357, "lng": -74.1724, "base": "central", "alt": 3, "links": ["rocky", "mathey"]}, {"lat": 40.7367, "lng": -74.1734, "base": "rocky", "alt": 3, "links": ["central", "mathey"]}, {"lat": 40.7347, "lng": -74.1714, "base": "mathey", "alt": 3, "links": ["central", "rocky"]}]

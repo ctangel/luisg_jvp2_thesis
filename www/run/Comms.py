@@ -120,9 +120,12 @@ class Delivery():
     def unpackage(self, data, source, devID):
         assert(data is not None and source is not None)
         dec_msg = self.decrypt(data, devID)
+        print "\t\t\t%s" %dec_msg
         try:
             d = dec_msg.decode('ascii')
+            print "\t\t\t\tdec 1"
             dd = repr(dec_msg).decode('ascii')
+            print "\t\t\t\tdec 2"
         except:
             return (None, None)
         try:
