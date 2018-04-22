@@ -6,16 +6,6 @@ sys.path.append('../serial_tests'); import getPixhawkPort as getPort
 #Find the Vehcle
 path = getPort.find_device(getPort.pixhawk)
 
-#parser = argparse.ArgumentParser()
-#parser.add_argument('--connect', default=path) #TODO: what does this do?
-#args = parser.parse_args()
-=======
-parser = argparse.ArgumentParser()
-parser.add_argument('--connect', default=path)
-args = parser.parse_args()
-exit()
-
-
 #Connect to the Vehicle
 #print 'Connecting to vehicle on %s' %args.connect
 
