@@ -76,8 +76,8 @@ print("Now let's land")
 vehicle.mode = VehicleMode("LAND")
 
 while vehicle.armed:
-    vehicle_mode = VehicleMode("LAND")
     time.sleep(1)
+print("Landed")
 
 #Close Vehicle Object
 vehicle.close()

@@ -22,7 +22,7 @@ import serial.tools.list_ports
 import Comms
 from dronekit import connect, VehicleMode, LocationGlobal
 from pymavlink import mavutil
-import argparse, sys
+import argparse, sys, geopy
 
 
 # CODES
@@ -89,6 +89,25 @@ XBEE = {
     "addr":     None,
     "session":  None
 }
+
+def distanceTo(targetLocation):
+
+    print "DEBUG: targetLocation: %s" % targetLocation
+    print "DEBUG: targetLocation: %s" % targetDistance
+
+    while vehicle.mode.name=="GUIDED": #Stop action if we are no longer in guided mode.
+        print "DEBUG: mode: %s" % vehicle.mode.name
+        remainingDistance=get_distance_metres(vehicle.location.global_frame, targetLocation)
+        print "DEBUG: Distance to target: ", remainingDistance
+        if remainingDistance<=targetDistance*0.05: #Just below target, in case of undershoot.
+            print "DEBUG: Reached target"
+            break;
+        time.sleep(2)
+
+def get_distance(coor1, coor2):
+    pos1 = (coor1.lat, coor1.lon)
+    pos2 = (coor2.lat, coor2.lon)
+    return distance.distance(pos1, pos2).meters
 
 
 def find_device(device):
@@ -222,8 +241,10 @@ def direct(data):
             cmds.add(cmd)
         cmds.upload()
         vehicle.mode = VehicleMode("GUIDED")
+
     print "\t\tAfter"
     print "\t\t\ttarget: %s" % repr(target)
+    distanceTo(LocationGlobal(lat=target['waymarks'][-2].lat, lon=target['waymarks'][-2].lon))
 
     """
             msg = vehicle.message_factory.set_position_target_global_int_encode(
@@ -241,9 +262,6 @@ def direct(data):
             0, 0)    # yaw, yaw_rate (not supported yet, ignored in GCS_Mavlink)
             # send command to vehicle
             vehicle.send_mavlink(msg)
-    """
-    """
-        waymark = [{"lat":b.get('lat'), "lng": b.get('lng')}]
     """
 
 def release(baseID):
@@ -272,6 +290,7 @@ def move_to_base(data):
         PIXHAWK['session'].mode = VehicleMode("GUIDED")
         # code to translate coordinates into mechanical movements for the pixhawk
         # drone moves to the base
+        distanceTo(LocationGlobal(lat=trgt.get('lat'), lon=trgt.get('lon'))
 
 def abort(data):
     print_info(data)
@@ -287,7 +306,7 @@ def abort(data):
         trgt.get('lat'), trgt.get('lon'), target['alt'])
         cmds.add(cmd)
         cmds.upload()
-        PIXHAWK['session'].mode = VehicleMode("GUIDED")
+        land()
         db(ABORT)
 
 def reply_status(baseID, nextBaseID):
@@ -346,7 +365,7 @@ def arm_and_takeoff(targetAlt):
 
     #Return from function once target altitude is about to be reached
     while True:
-        if vehicle.location.global_frame.alt >= targetAlt *0.95:
+        if vehicle.location.global_frame.alt >= targetAlt *0.9:
             break
         sleep(1)
 
@@ -363,6 +382,9 @@ def take_off(data):
 def land():
     if fly:
         PIXHAWK['session'].mode = VehicleMode("LAND")
+        while PIXHAWK['session'].armed:
+            time.sleep(1)
+
     #NOTE: there is nothing here to ensure that the drone has completed it's landing
 
 def idle():
