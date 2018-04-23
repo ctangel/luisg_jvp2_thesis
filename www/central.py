@@ -155,6 +155,11 @@ def send_fp():
     for stop in flight_plan:
         addrs.append(addr_data.get(stop))
     # Get flight_plan from base
+    print type(flight_plan)
+    print flight_plan
+    print addrs
+    flight_plan.append('mathey')
+    addrs.append('0013a2004175bc91')
     m = {
             "code": SEND_FP,
             "id": "central",
