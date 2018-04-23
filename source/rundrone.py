@@ -127,7 +127,8 @@ def startXBEE(device):
         device['addr'] = binascii.hexlify(addr[0] + addr[1])
         return True
     except:
-        device['session'].close()
+        if device.get('session') != None:
+            device['session'].close()
         return False
 
 def get_coordinates():
