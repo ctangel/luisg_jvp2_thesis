@@ -158,8 +158,6 @@ def send_fp():
     print type(flight_plan)
     print flight_plan
     print addrs
-    flight_plan.append('mathey')
-    addrs.append('0013a2004175bc91')
     m = {
             "code": SEND_FP,
             "id": "central",

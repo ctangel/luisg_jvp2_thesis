@@ -241,10 +241,9 @@ def direct(data):
             cmds.add(cmd)
         cmds.upload()
         vehicle.mode = VehicleMode("GUIDED")
-
+        distanceTo(LocationGlobal(lat=target['waymarks'][-2].lat, lon=target['waymarks'][-2].lon))
     print "\t\tAfter"
     print "\t\t\ttarget: %s" % repr(target)
-    distanceTo(LocationGlobal(lat=target['waymarks'][-2].lat, lon=target['waymarks'][-2].lon))
 
     """
             msg = vehicle.message_factory.set_position_target_global_int_encode(
@@ -290,7 +289,7 @@ def move_to_base(data):
         PIXHAWK['session'].mode = VehicleMode("GUIDED")
         # code to translate coordinates into mechanical movements for the pixhawk
         # drone moves to the base
-        distanceTo(LocationGlobal(lat=trgt.get('lat'), lon=trgt.get('lon'))
+        distanceTo(LocationGlobal(lat=trgt.get('lat'), lon=trgt.get('lon')))
 
 def abort(data):
     print_info(data)
@@ -365,7 +364,7 @@ def arm_and_takeoff(targetAlt):
 
     #Return from function once target altitude is about to be reached
     while True:
-        if vehicle.location.global_frame.alt >= targetAlt *0.9:
+        if vehicle.location.global_frame.alt >= targetAlt *0.88:
             break
         sleep(1)
 

@@ -93,8 +93,8 @@ class Delivery():
         via the given 'comm' to the destination 'dest'
     """
     def package(self, dest, data, devID):
-        assert(data != None and dest != None and len(data) <= self.MAX_MSG_SIZE)
-
+        assert(data != None and dest != None and len(data) <= self.MAX_MSG_SIZE) 
+        print "\t\t\t\t%s" % repr(self.destinations)
         #Destination is new. Add dicitonary file for this destination
         if self.destinations.get(dest) == None:
             self.destinations[dest] = {}
@@ -108,24 +108,25 @@ class Delivery():
                 self.destinations[dest][msgID] = 'SENDER'
                 break
             return False
-
+        #TODO   Currently, the same message cannot be send to a destination twice
+        #       This present attempts at resending a dropped message
         #prepare messages by prefixing and encrypting
         msgs = []
         for i, msg in enumerate(chunks):
             msgs.append("%s%s%s%s" % (msgID, self.REFLIST[i], self.REFLIST[max], msg))
         if dest == '\x00\x00\x00\x00\x00\x00\xff\xff':
                     del self.destinations[dest]
+        print "\t\t\t\t%s" % repr(self.destinations)
         return self.batchEncrypt(msgs, devID)
 
     def unpackage(self, data, source, devID):
         assert(data is not None and source is not None)
         dec_msg = self.decrypt(data, devID)
-        print "\t\t\t%s" %dec_msg
+        print "\t\t\t\t%s" % repr(self.destinations)
+        print dec_msg
         try:
             d = dec_msg.decode('ascii')
-            print "\t\t\t\tdec 1"
             dd = repr(dec_msg).decode('ascii')
-            print "\t\t\t\tdec 2"
         except:
             return (None, None)
         try:
@@ -299,6 +300,8 @@ class Comms():
         is_global = False
         msg = self.queue.get_nowait()
         if msg['id'] is 'rx':
+            print msg
+            print "checking source %s" % msg.get('source_addr_long')
             #TODO Handle both dev_id and glob_id
             msgID, data = self.delivery.unpackage(msg['rf_data'], msg['source_addr_long'], dev_id)
             if msgID is None and data is None:

@@ -93,8 +93,8 @@ class Delivery():
         via the given 'comm' to the destination 'dest'
     """
     def package(self, dest, data, devID):
-        assert(data != None and dest != None and len(data) <= self.MAX_MSG_SIZE)
-
+        assert(data != None and dest != None and len(data) <= self.MAX_MSG_SIZE) 
+        print "\t\t\t\t%s" % repr(self.destinations)
         #Destination is new. Add dicitonary file for this destination
         if self.destinations.get(dest) == None:
             self.destinations[dest] = {}
@@ -108,13 +108,15 @@ class Delivery():
                 self.destinations[dest][msgID] = 'SENDER'
                 break
             return False
-
+        #TODO   Currently, the same message cannot be send to a destination twice
+        #       This present attempts at resending a dropped message
         #prepare messages by prefixing and encrypting
         msgs = []
         for i, msg in enumerate(chunks):
             msgs.append("%s%s%s%s" % (msgID, self.REFLIST[i], self.REFLIST[max], msg))
         if dest == '\x00\x00\x00\x00\x00\x00\xff\xff':
                     del self.destinations[dest]
+        print "\t\t\t\t%s" % repr(self.destinations)
         return self.batchEncrypt(msgs, devID)
 
     def unpackage(self, data, source, devID):

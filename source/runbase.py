@@ -66,7 +66,7 @@ debug           = False
 run             = True
 request         = False
 ping            = False
-base_alt        = 5
+base_alt        = 1
 dev_coor        = None
 disableGPS      = False
 
@@ -515,21 +515,22 @@ def send_propogate(data):
 
     m = {'code': PROPOGATE, 'og':data.get('og'), 'id': dev_id, "data":d, "q": q, "t":t}
     #TODO Pending more tests, this closed out programs
-    if len(q) == 0:
-        # if queue is empty, go back in trace
-        i = t.pop()
-        m['t'] = t
-        recipient = i
-    elif bases.get(q[0]) == None:
-        # if queue item 1 exists in bases, go back in trace
-        i = t.pop()
-        m['t'] = t
-        recipient = i
-    else:
-        t.append(dev_id)
-        m['q'] = q[1:]
-        m['t'] = t
-        recipient = q[0]
+    if len(t) != 0:
+        if len(q) == 0:
+            # if queue is empty, go back in trace
+            i = t.pop()
+            m['t'] = t
+            recipient = i
+        elif bases.get(q[0]) == None:
+            # if queue item 1 exists in bases, go back in trace
+            i = t.pop()
+            m['t'] = t
+            recipient = i
+        else:
+            t.append(dev_id)
+            m['q'] = q[1:]
+            m['t'] = t
+            recipient = q[0]
 
     db(PROPOGATE)
     #TODO Could fail, may need glob_id instead of recipient
