@@ -214,14 +214,15 @@ def get_state_from_enc_pub():
         if msg == None:
             return data
         msg = msg.get('rx')
-        m.update(msg)
-        if digest != m.digest():
-            digest = m.digest()
-        try:
-            data = json.loads(msg)
-        except:
-            print "\t\tpass"
-            pass
+        #m.update(msg)
+        #if digest != m.digest():
+        #    digest = m.digest()
+        #try:
+        #    data = json.loads(msg)
+        #except:
+        #    print "\t\tpass"
+        #    pass
+        data = json.loads(msg)
     return data
 
 def broadcast_enc_pub(dest=None, data=None):

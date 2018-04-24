@@ -95,6 +95,7 @@ class Delivery():
     def package(self, dest, data, devID):
         assert(data != None and dest != None and len(data) <= self.MAX_MSG_SIZE) 
         #Destination is new. Add dicitonary file for this destination
+        print self.destinations
         if self.destinations.get(dest) == None:
             self.destinations[dest] = {}
 
@@ -106,7 +107,7 @@ class Delivery():
             if msgID not in self.destinations[dest]:
                 self.destinations[dest][msgID] = 'SENDER'
                 break
-            return False
+            #return False
         #TODO   Currently, the same message cannot be send to a destination twice
         #       This present attempts at resending a dropped message
         #prepare messages by prefixing and encrypting
@@ -120,6 +121,7 @@ class Delivery():
     def unpackage(self, data, source, devID):
         assert(data is not None and source is not None)
         dec_msg = self.decrypt(data, devID)
+        print "\t\t\t%s" % dec_msg
         try:
             d = dec_msg.decode('ascii')
             dd = repr(dec_msg).decode('ascii')
@@ -131,22 +133,33 @@ class Delivery():
                 del self.destinations[source][w.get("msgID")]
             return (w.get('msgID'), None)
         except:
-            try:
+            #NOTE Failurer here. exception is thrown and (None, None) is thrown even though message was properly decrypted
+            #try:
+            if True:
                 i = dec_msg[0] #Message Identifier
                 m = int(dec_msg[2]) #Number of partial messages for completed message
                 #Means that this is the first message received with this identifier.
                 #Make a new MessageBuilder
+                print "\t\t\t++> source: %s" % source
+                print "\t\t\t++> %s" % repr(self.destinations)
                 if self.destinations.get(source) == None:
                     self.destinations[source] = {}
-
+                
+                print "\t\t\t++> %s" % repr(self.destinations)
                 #For this source, get the message identifier. If no identifier exists,
                 #Create a new diciotnary file with the Message Builder
+                #NOTE this can return either a Message Builder or a 'SENDER' string
                 if self.destinations[source].get(i) == None:
                     self.destinations[source][i] = MessageBuilder(m)
+                if self.destinations[source].get(i) == "SENDER":
+                    #Overwrite SENDER STATUS
+                    self.destinations[source][i] = MessageBuilder(m)
+                print "\t\t\t++> %s" % repr(self.destinations)
                 if self.destinations[source][i].addMessage(dec_msg[1:]):
                     complete_msg = self.__compileMessage(self.destinations[source][i].getMsgs())
                     del self.destinations[source][i]
                     return (i, complete_msg) #TODO: recipient now needs to send a confimration
+            try:
                 return (i, None)
             except:
                 return (None, None)
@@ -191,6 +204,7 @@ class Comms():
 
         try:
             self.xb = ZigBee(self.ser, callback=self.callback)
+
         except:
             print "xb initialization failed"
             self.ser.close()
@@ -230,6 +244,7 @@ class Comms():
         processed. If the received frame is an 'at_response', will blocks
     """
     def __queuedCallback(self, data):
+        print "\t\t\t-> %s" % repr(data)
         if data['id'] is 'at_response':
             self.queueAT.put(data, block=False)
             return
@@ -331,16 +346,25 @@ class Comms():
             """
         if msg['id'] is 'rx':
             option = binascii.hexlify(msg.get('options'))
+            is_global = False
             if option == "c2":
                 # global
+                print "\t\t\tGLOBAL"
                 msgID, data = self.delivery.unpackage(msg['rf_data'], msg['source_addr_long'], global_id)
+                is_global = True
             else:
                 # dev_id
+                print "\t\t\tDEV_ID"
                 msgID, data = self.delivery.unpackage(msg['rf_data'], msg['source_addr_long'], dev_id)
+            if data == None and msgID == None:
+                print "\t\t\tNot for me" 
+                #return None
             if data != None:
+                print "\t\t\tHave data!"
                 try:
                     senderID = json.loads(data).get('id')
                 except:
+                    print "\t\t\tNot decrypted properly"
                     return None
                 dest = msg['source_addr_long'] #FIXME: possibly in wrong format (but correct parameter)
                 m = {"code": "y", "msgID": msgID} #FIXME: get a global variable / not hardcoded
@@ -349,7 +373,7 @@ class Comms():
                     self.sendData(dest=dest, data=msg, ack=True, devID=senderID)
                 return {'rx': data}
             else:
-                #del self.destinations[source][i]
+                print "\t\t\tPass, no data"
                 pass
             return None
         elif msg['id'] is 'at_response':

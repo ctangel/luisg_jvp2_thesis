@@ -68,7 +68,7 @@ request         = False
 ping            = False
 base_alt        = 1
 dev_coor        = None
-disableGPS      = False
+disableGPS      = True
 
 # GPS Device Information
 GPS = {
@@ -208,20 +208,21 @@ def get_state_from_enc_pub():
     m = hashlib.md5()
     data = {"code": IDLE}
     msg = {}
-    print "/// *** %d ** \\\\\\" % XBEE.get('session').messageCount()
+    print "/// *** %d" % XBEE.get('session').messageCount()
     if not XBEE.get('session').isMailboxEmpty():
         msg = XBEE.get('session').readMessage()
         if msg == None:
             return data
         msg = msg.get('rx')
-        m.update(msg)
-        if digest != m.digest():
-            digest = m.digest()
-        try:
-            data = json.loads(msg)
-        except:
-            print "\t\tpass"
-            pass
+        #m.update(msg)
+        #if digest != m.digest():
+        #    digest = m.digest()
+        #try:
+        #    data = json.loads(msg)
+        #except:
+        #    print "\t\tpass"
+        #    pass
+        data = json.loads(msg)
     return data
 
 def broadcast_enc_pub(dest=None, data=None):
@@ -294,7 +295,7 @@ def send_directions(data):
         origin = {"lat":dev_coor.get('lat'), "lng":dev_coor.get('lng')}
         target = {"lat":b.get('lat'), "lng":b.get('lng')}
         brng = get_bearing(origin, target)
-        d = 0.001 # In meters or 3ft
+        d = 0.001
         if p == "1":
             left = (brng - 90) % 360
             waymarks.append(get_new_coor(origin, left, d))
@@ -501,14 +502,14 @@ def send_propogate(data):
         for key in d:
             d.get(key)["base"] = key
             data.append(d.get(key))
-        #TODO Needs to check if 1. New data's bases exists in existing map. If so, the value need to be updated with the new ones.
+        #TODO Needs to check if 1. New data's bases exists in existing map. If so, the value need to be updated with the new ones. 
         if os.path.isfile('map.pub'):
            with open('map.pub') as fn:
             existing_map = json.load(fn)
             for m in existing_map:
                 if m not in data:
                     data.append(m)
-
+ 
         with open('map.pub', 'w') as fn:
             fn.write(json.dumps(data))
         return
