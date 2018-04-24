@@ -208,7 +208,7 @@ def get_state_from_enc_pub():
     m = hashlib.md5()
     data = {"code": IDLE}
     msg = {}
-    print "/// *** %d ** \\\\\\" % XBEE.get('session').messageCount()
+    print "/// *** %d" % XBEE.get('session').messageCount()
     if not XBEE.get('session').isMailboxEmpty():
         msg = XBEE.get('session').readMessage()
         if msg == None:
