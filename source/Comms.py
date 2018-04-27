@@ -134,8 +134,7 @@ class Delivery():
             return (w.get('msgID'), None)
         except:
             #NOTE Failurer here. exception is thrown and (None, None) is thrown even though message was properly decrypted
-            #try:
-            if True:
+            try:
                 i = dec_msg[0] #Message Identifier
                 m = int(dec_msg[2]) #Number of partial messages for completed message
                 #Means that this is the first message received with this identifier.
@@ -159,7 +158,6 @@ class Delivery():
                     complete_msg = self.__compileMessage(self.destinations[source][i].getMsgs())
                     del self.destinations[source][i]
                     return (i, complete_msg) #TODO: recipient now needs to send a confimration
-            try:
                 return (i, None)
             except:
                 return (None, None)

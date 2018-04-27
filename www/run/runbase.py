@@ -8,19 +8,11 @@
  * Author: Luis Gonzalez-Yante
  *
 '''
-import hashlib
-import os
-import threading
-import random
-import string
-import json
-import math
-from geopy import distance
-import binascii
-import time
-import serial.tools.list_ports
-import subprocess as sp
+import hashlib, os, threading, random
+import string, json, math, binascii
+import time, serial.tools.list_ports, subprocess as sp
 import Comms
+from geopy import distance
 from gps3 import gps3 as gps
 
 # CODES
@@ -54,7 +46,6 @@ ACK             = 'y'
 LAND            = 'z'
 
 # Global Variables
-db_file_name    = 'deb.pub'
 digest          = None
 dev_id          = None
 glob_id         = None
@@ -62,13 +53,13 @@ data            = {'code': IDLE}
 bases           = {}
 drones          = {}
 msgs            = {}
-debug           = False
 run             = True
 request         = False
 ping            = False
 base_alt        = 1
 dev_coor        = None
 disableGPS      = True
+debug           = True
 
 # GPS Device Information
 GPS = {
@@ -93,68 +84,71 @@ def find_device(device):
     ports = serial.tools.list_ports.comports()
     for port in ports:
       for i in range(len(device['vid'])):
-          if port.vid == int(device['vid'][i], 16) and port.pid == int(device['pid'][i], 16):
+          dev_vid = int(device['vid'][i], 16)
+          dev_pid = int(device['pid'][i], 16)
+          if port.vid == dev_vid and port.pid == dev_pid:
               device['port'] = port.device
               return True
     return False
 
-def db(STATE):
-    """ Used in debuging, will print state machine's current state """
-    global run
-    if debug:
-        with open(db_file_name, 'w') as fn:
-            fn.write(STATE)
-        #run = False
-
 def get_bearing(origin, target):
-    """ Returns the bearing (0 - 360 deg) the path between the two supplied GPS cooridates will
-        take the drone towards """
-    lat1 = math.radians(origin.get('lat'))
-    lng1 = math.radians(origin.get('lng'))
-    lat2 = math.radians(target.get('lat'))
-    lng2 = math.radians(target.get('lng'))
-    y = math.sin(lng2-lng1) * math.cos(lat2);
-    x = (math.cos(lat1) * math.sin(lat2)) - (math.sin(lat1) * math.cos(lat2) * math.cos(lng2-lng1));
-    brng = math.degrees(math.atan2(y, x));
-    deg = 360 - ((brng + 360) % 360);
-    return ((brng + 360) % 360);
+    """ Returns the bearing (0 - 360 deg) the path between the two supplied GPS
+        cooridates will take the drone towards """
+    lat1    = math.radians(origin.get('lat'))
+    lng1    = math.radians(origin.get('lng'))
+    lat2    = math.radians(target.get('lat'))
+    lng2    = math.radians(target.get('lng'))
+    y       = math.sin(lng2-lng1) * math.cos(lat2)
+    xleft   = math.cos(lat1) * math.sin(lat2)
+    xright  = math.sin(lat1) * math.cos(lat2) * math.cos(lng2-lng1)
+    x       = xleft - xright
+    brng    = math.degrees(math.atan2(y, x));
+    deg     = 360 - ((brng + 360) % 360);
+    return  (brng + 360) % 360
 
 def get_new_coor(coor, brng, d):
-    """ Returns the new coordinates of a location d kilometers in brng bearing from coordinates
-        (lat, lng1) """
-    lat1 = math.radians(coor.get('lat'))
-    lng1 = math.radians(coor.get('lng'))
-    R = 6371.0
-    lat2 = math.asin((math.sin(lat1)*math.cos(d/R)) + (math.cos(lat1)*math.sin(d/R)*math.cos(math.radians(brng)) ));
-    lng2 = lng1 + math.atan2(math.sin(math.radians(brng))*math.sin(d/R)*math.cos(lat1), math.cos(d/R) - (math.sin(lat1)*math.sin(lat2)));
-    return {"lat":math.degrees(lat2), "lng":math.degrees(lng2)}
+    """ Returns the new coordinates of a location d kilometers in brng bearing
+        from coordinates (lat, lng1) """
+    lat1        = math.radians(coor.get('lat'))
+    lng1        = math.radians(coor.get('lng'))
+    R           = 6371.0
+    lat2left    = math.sin(lat1) * math.cos(d/R)
+    lat2right   = math.cos(lat1) * math.sin(d/R) * math.cos(math.radians(brng))
+    lat2        = math.asin(lat2left + lat2right)
+    lng2left    = math.sin(math.radians(brng)) * math.sin(d/R) * math.cos(lat1)
+    lng2right   = math.cos(d/R) - (math.sin(lat1) * math.sin(lat2))
+    lng2        = lng1 + math.atan2(lng2left, lng2right)
+    return      {"lat":math.degrees(lat2), "lng":math.degrees(lng2)}
 
 def get_distance(coor1, coor2):
+    """ Returns the distance between coor1 and coor2 in kilometers """
     pos1 = (coor1.get('lat'), coor1.get('lng'))
     pos2 = (coor2.get('lat'), coor2.get('lng'))
     return distance.distance(pos1, pos2).kilometers
 
 
 def get_coordinates():
-    data = {'lat': None, 'lng': None, 'alt':None}
-    if not disableGPS:
-        if GPS.get('session') != None:
-            while True:
-                time.sleep(1)
-                report = GPS['session'].next()
-                print report
-                if report != None:
-                    report = json.loads(report)
-                    if report.get('class') == "TPV":
-                        if report.get('lat') != None and report.get('lon') != None:
-                            data['lat'] = report.get('lat')
-                            data['lng'] = report.get('lon')
-                            data['alt'] = report.get('alt')
-                            break
-    else:
-        data = {'lat': 40.7357, 'lng': -74.1724, 'alt':3}
+    """ Return a dictionary with latitude, longitude, and altitude obtained
+        from the GPS  """
+    data = {'lat': 40.7357, 'lng': -74.1724, 'alt':3} # Dummy Data
+    if not disabledGPS and GPS.get('session') != None:
+        while True:
+            time.sleep(1)
+            report = GPS['session'].next()
+            print report
+            if report != None:
+                report = json.loads(report)
+                if report.get('class') == "TPV":
+                    if report.get('lat') != None and report.get('lon') != None:
+                        # Update Dummy Data with real GPS coordinates
+                        data['lat'] = report.get('lat')
+                        data['lng'] = report.get('lon')
+                        data['alt'] = report.get('alt')
+                        break
     return data
 
+#TODO   Using Threading to launch a trigger does not appear to work.
+#       Consider removing these functions
 def trigger_request():
     global request
     threading.Timer(100, trigger_request)
@@ -168,7 +162,6 @@ def trigger_ping():
 def startGPS(device):
     """ Sets up and establishes a connection with the provided gps device.
         If connection is successful, it returns true, else false"""
-    # Checking if GPS is Connected to Socket
     if disableGPS:
         return True
     try:
@@ -178,7 +171,6 @@ def startGPS(device):
         device['session'].connect()
         device['session'].watch()
     except:
-        # GPS Failed to Connect to Socket
         return False
 
     while True:
@@ -191,92 +183,132 @@ def startGPS(device):
     return True
 
 def startXBEE(device):
+    """ Sets up and establishes a connection with the provided xbee device.
+        If connection is successful, it returns true, else false """
     try:
-        device['session'] = Comms.Comms(device.get('port'), data_only=True)
-        addr = device.get('session').getLocalAddr()
+        device['session']   = Comms.Comms(device.get('port'), data_only=True)
+        addr                = device.get('session').getLocalAddr()
         time.sleep(1)
-        device['addr'] = binascii.hexlify(addr[0] + addr[1])
+        device['addr']      = binascii.hexlify(addr[0] + addr[1])
         return True
     except:
         if device.get('session') != None:
             device['session'].close()
         return False
 
-def get_state_from_enc_pub():
-    """ Checks if messages exists, if so, then is reads them in """
-    global digest
-    m = hashlib.md5()
-    data = {"code": IDLE}
-    msg = {}
+def get_next_state():
+    """ Checks if messages exists, if so, then is reads them in
+        and returns it """
+    data    = {"code": IDLE}
+    msg     = {}
     print "/// *** %d" % XBEE.get('session').messageCount()
     if not XBEE.get('session').isMailboxEmpty():
-        msg = XBEE.get('session').readMessage()
+        msg     = XBEE.get('session').readMessage()
         if msg == None:
             return data
-        msg = msg.get('rx')
-        #m.update(msg)
-        #if digest != m.digest():
-        #    digest = m.digest()
-        #try:
-        #    data = json.loads(msg)
-        #except:
-        #    print "\t\tpass"
-        #    pass
-        data = json.loads(msg)
+        msg     = msg.get('rx')
+        data    = json.loads(msg)
     return data
 
-def broadcast_enc_pub(dest=None, data=None):
-    print "\t\tSending...:"
-    jdata = json.loads(data)
-    for key in jdata:
-        print "\t\t\t%s\t\t%s" % (key, repr(jdata.get(key)))
-    if dest == glob_id:
-        print "\t\tsending to %s at %s" % (dest, repr(Comms.Comms.BROADCAST))
-        XBEE.get('session').sendData(Comms.Comms.BROADCAST, data, None, dest)
-    elif bases.get(dest) != None:
-        print "\t\tsending to %s at %s" % (dest, repr(bases.get(dest).get('addr')))
-        XBEE.get('session').sendData(bases.get(dest).get('addr'), data, None, dest)
-    elif drones.get(dest) != None:
-        print "\t\tsending to %s at %s" % (dest, repr(drones.get(dest).get('addr')))
-        XBEE.get('session').sendData(drones.get(dest).get('addr'), data, None, dest)
-    else:
-        print "\t\t/*** Failed to send"
-        #exit("Failed to send")
+def log(data):
+    if debug:
+        print data
 
 def print_info(data):
+    """ Prints each key and value of the provided dictionary """
     print "\t\tReceived..."
     for key in data:
         print "\t\t\t%s\t\t%s" %(key, repr(data.get(key)))
+
+def send_message(dest=None, data=None):
+    """ Sends provided data to the provided destination via Xbee """
+    print "\t\tSending...:"
+    base    = bases.get(dest)
+    drone   = drones.get(dest)
+    print_info(json.loads(data))
+    if dest == glob_id:
+        print "\t\tsending to %s at %s" % (dest, repr(Comms.Comms.BROADCAST))
+        XBEE.get('session').sendData(Comms.Comms.BROADCAST, data, None, dest)
+    elif base != None:
+        print "\t\tsending to %s at %s" % (dest, repr(base.get('addr')))
+        XBEE.get('session').sendData(base.get('addr'), data, None, dest)
+    elif drone != None:
+        print "\t\tsending to %s at %s" % (dest, repr(drone.get('addr')))
+        XBEE.get('session').sendData(drone.get('addr'), data, None, dest)
+    else:
+        print "\t\t/*** Failed to send"
+
 
 #
 #   State Methods
 #
 
 def idle():
-    global run
-    db(IDLE)
+    """ Idle state. Does nothing"""
+    pass
 
 def send_connection_confirmation(data):
+    """ Replies a drone's request confirmation request """
     global drones
     print_info(data)
-    print "\t\tBefore"
-    print "\t\t\tdrone: %s" % repr(drones)
+    log("\t\tBefore")
+    log("\t\t\tdrone: %s" % repr(drones))
     m = {'code': ASK_DIRECT, 'id': dev_id, 'data': 'OK'}
     if data.get('id') not in drones:
         drones[data.get('id')] = {"addr": binascii.unhexlify(data.get('addr'))}
-    print "\t\tAfter"
-    print "\t\t\tdrones: %s" % repr(drones)
-    db(SEND_CONFIRM)
-    broadcast_enc_pub(data.get('id'), json.dumps(m))
+    log("\t\tAfter")
+    log("\t\t\tdrones: %s" % repr(drones))
+    send_message(data.get('id'), json.dumps(m))
+
+def send_dummy_directions(path):
+    global bases
+    waymarks = []
+    # Generate Path
+    target = {"lat": 40.350208333, "lng": -74.651626667}
+    origin = {"lat": 40.350416667, "lng": -74.65173}
+    brng = get_bearing(origin, target)
+    d = 0.006
+    if path == "1":
+        left = (brng - 90) % 360
+        waymarks.append(get_new_coor(origin, left, d))
+        dist = get_distance(waymarks[0], target)
+        third = dist / 3.0
+        remainder = dist - third
+        waymarks.append(get_new_coor(waymarks[0], brng, third))
+        waymarks.append(get_new_coor(waymarks[1], brng, remainder))
+    elif path == "2":
+        dist = get_distance(origin, target)
+        third = dist / 3.0
+        remainder = dist - third
+        waymarks.append(get_new_coor(origin, brng, third))
+        waymarks.append(get_new_coor(waymarks[0],brng, remainder))
+    else:
+        right = (brng + 90) % 360
+        waymarks.append(get_new_coor(origin, right, d))
+        dist = get_distance(waymarks[0], target)
+        third = dist / 3.0
+        remainder = dist - third
+        waymarks.append(get_new_coor(waymarks[0], brng, third))
+        waymarks.append(get_new_coor(waymarks[1], brng, remainder))
+    
+    print "/*** trace"
+    for point in waymarks:
+        print "%s, %s" % (repr(point.get('lat')), repr(point.get('lng')))
 
 def send_directions(data):
+    """ Replies a drone's request for directions to a provided destination
+        If the provided destination does not exist, then the drone will be
+        forced to abort. if the provided destination does exist, but all
+        paths are occupied, it will be asked to hover until a path opens up
+    """
     global bases
     print_info(data)
-    print "\t\tBefore"
-    print "\t\t\tbases: %s" % repr(bases)
+    log("\t\tBefore")
+    log("\t\t\tbases: %s" % repr(bases))
     b = bases.get(data.get('base'))
     if b == None:
-        #TODO Handle Situation when base provided is not in recognized by the base
+        #TODO Handle Situation when base provided is not in recognized
+        #   by the base
         m = {'code': ABORT, "id": dev_id}
     else:
         # Find open path
@@ -295,105 +327,117 @@ def send_directions(data):
         origin = {"lat":dev_coor.get('lat'), "lng":dev_coor.get('lng')}
         target = {"lat":b.get('lat'), "lng":b.get('lng')}
         brng = get_bearing(origin, target)
-        d = 0.001
-        if p == "1":
+        d = 0.006
+        if path == "1":
             left = (brng - 90) % 360
             waymarks.append(get_new_coor(origin, left, d))
             dist = get_distance(waymarks[0], target)
             third = dist / 3.0
             remainder = dist - third
-            waymarks.append(get_new_coor(waymarks[0], 0, third))
-            waymarks.append(get_new_coor(waymarks[1], 0, remainder))
-        elif p == "2":
+            waymarks.append(get_new_coor(waymarks[0], brng, third))
+            waymarks.append(get_new_coor(waymarks[1], brng, remainder))
+        elif path == "2":
             dist = get_distance(origin, target)
             third = dist / 3.0
             remainder = dist - third
-            waymarks.append(get_new_coor(origin, 0, third))
-            waymarks.append(get_new_coor(waymarks[0], 0, remainder))
+            waymarks.append(get_new_coor(origin, brng, third))
+            waymarks.append(get_new_coor(waymarks[0],brng, remainder))
         else:
             right = (brng + 90) % 360
             waymarks.append(get_new_coor(origin, right, d))
             dist = get_distance(waymarks[0], target)
             third = dist / 3.0
             remainder = dist - third
-            waymarks.append(get_new_coor(waymarks[0], 0, third))
-            waymarks.append(get_new_coor(waymarks[1], 0, remainder))
+            waymarks.append(get_new_coor(waymarks[0], brng, third))
+            waymarks.append(get_new_coor(waymarks[1], brng, remainder))
         # Send info
         m = {
                 'code': DIRECT,
                 'waymarks': waymarks,
                 'id': dev_id,
-                'lng': bases.get(data.get('base')).get('lng'), #FIXME: get rid of old way
-                'lat': bases.get(data.get('base')).get('lat'), #FIXME: get rid of old way
-                'alt': dev_coor.get('alt') + (bases[data.get('base')].get('out') * base_alt)
+                'lng': b.get('lng'), #FIXME: get rid of old way
+                'lat': b.get('lat'), #FIXME: get rid of old way
+                'alt': dev_coor.get('alt') + (bases.get('out') * base_alt)
             }
-    print "\t\tAfter"
-    print "\t\t\tbases: %s" % repr(bases)
-    db(SEND_DIRECT)
-    broadcast_enc_pub(data.get('id'), json.dumps(m))
+    
+    print "/*** trace"
+    for points in waymarks:
+        print "%s, %s" % (repr(point.get('lat')), repr(point.get('lng')))
+
+    log("\t\tAfter")
+    log("\t\t\tbases: %s" % repr(bases))
+    send_message(data.get('id'), json.dumps(m))
 
 def send_release_msg(data):
+    """ Replies to a drone's request to be released by generating a random
+        message """
     global msgs
     global drones
     print_info(data)
-    print "\t\tBefore"
-    print "\t\t\tmsgs:   %s" % repr(msgs)
-    print "\t\t\tdrones: %s" % repr(drones)
+    log("\t\tBefore")
+    log("\t\t\tmsgs:   %s" % repr(msgs))
+    log("\t\t\tdrones: %s" % repr(drones))
     m = {'code': SEND, 'msg': 'asdef', "id": dev_id}
     drones[data.get('id')] = {'addr':binascii.unhexlify(data.get('addr'))}
     chars = string.ascii_uppercase + string.digits
     m['msg'] = ''.join(random.choice(chars) for _ in range(12))
     msgs[data.get('id')] = m.get('msg')
-    print "\t\tAfter"
-    print "\t\t\tmsgs:   %s" % repr(msgs)
-    print "\t\t\tdrones: %s" % repr(drones)
-    db(RELEASE_MSG)
-    broadcast_enc_pub(data.get('id'), json.dumps(m))
+    log("\t\tAfter")
+    log("\t\t\tmsgs:   %s" % repr(msgs))
+    log("\t\t\tdrones: %s" % repr(drones))
+    send_message(data.get('id'), json.dumps(m))
 
 def forward_release_msg(data):
+    """ Responds to the drone's request to forward the release message provided
+        to the provded base """
     print_info(data)
-    print "\t\tBefore"
-    print "\t\t\tmsgs:   %s" % repr(msgs)
-    print "\t\t\tdrones: %s" % repr(drones)
+    log("\t\tBefore")
+    log("\t\t\tmsgs:   %s" % repr(msgs))
+    log("\t\t\tdrones: %s" % repr(drones))
     m = {
             'code': RELEASE_ACC,
             'msg': data.get("msg"),
             'id': data.get('id'),
             'base': dev_id
         }
-    db(FORWARD)
-    print "\t\tAfter"
-    print "\t\t\tmsgs:   %s" % repr(msgs)
-    print "\t\t\tdrones: %s" % repr(drones)
-    broadcast_enc_pub(data.get('base'), json.dumps(m))
+    log("\t\tAfter")
+    log("\t\t\tmsgs:   %s" % repr(msgs))
+    log("\t\t\tdrones: %s" % repr(drones))
+    send_message(data.get('base'), json.dumps(m))
 
 def send_release_acceptance(data):
+    """ Responds to the base's forward request by accepting or rejecting the
+        message. If accepted, the base replies to provided  drone and released
+        control. If rejected, the base will be forced to abort. """
     global drones
     global bases
     print_info(data)
-    print "\t\tBefore"
-    print "\t\t\tbases:  %s" % repr(bases)
-    print "\t\t\tdrones: %s" % repr(drones)
+    log("\t\tBefore")
+    log("\t\t\tbases:  %s" % repr(bases))
+    log("\t\t\tdrones: %s" % repr(drones))
     m = {'code': MOVE}
     if data.get('msg') != msgs.get(data.get('id')):
+        #TODO Force the drone to abort or request the release again
         m['msg'] = 'FAILED'
     for p in bases[data.get('base')].get('paths'):
         if bases[data.get('base')].get('paths').get(p) == data.get('id'):
             bases[data.get('base')]['paths'][p] = None
-    db(RELEASE_ACC)
-    broadcast_enc_pub(data.get('id'), json.dumps(m))
+    send_message(data.get('id'), json.dumps(m))
     if data.get('id') in drones:
        del drones[data.get('id')]
-    print "\t\tAfter"
-    print "\t\t\tbases:  %s" % repr(bases)
-    print "\t\t\tdrones: %s" % repr(drones)
+    log("\t\tAfter")
+    log("\t\t\tbases:  %s" % repr(bases))
+    log("\t\t\tdrones: %s" % repr(drones))
 
 def send_ping():
+    """ Broadcasts a message with information needed communicate and locate.
+        This information includes id, xbee address, latitude, longitude, and
+        altidude """
     global ping
     global bases
     ping = False
-    print "\t\tBefore"
-    print "\t\t\tbases: %s" % repr(bases)
+    log("\t\tBefore")
+    log("\t\t\tbases: %s" % repr(bases))
     m = {"code": REPLY_PING,
             "id": dev_id,
             "addr":XBEE.get('addr'),
@@ -410,15 +454,16 @@ def send_ping():
                 del bases[b]
             else:
                 bases[b]['check'] = bases[b]['check'] - 1
-    print "\t\tAfter"
-    print "\t\t\tbases: %s" % repr(bases)
-    broadcast_enc_pub(glob_id, json.dumps(m))
+    log("\t\tAfter")
+    log("\t\t\tbases: %s" % repr(bases))
+    send_message(glob_id, json.dumps(m))
 
 def send_reply_ping(data):
-    print bases
+    """ Replies to a ping, by sending personal information needed to
+        communicate and locate. Add provided information into memeory """
     print_info(data)
-    print "\t\tBefore"
-    print "\t\t\tbases: %s" % repr(bases)
+    log("\t\tBefore")
+    log("\t\t\tbases: %s" % repr(bases))
     if bases.get(data.get('id')) == None:
         # add to the base with out route 1 and in route 2
         bases[data.get('id')] = {
@@ -443,19 +488,21 @@ def send_reply_ping(data):
             "alt": dev_coor.get('alt'),
             "route":2
         }
-    print "\t\tAfter"
-    print "\t\t\tbases: %s" % repr(bases)
-    broadcast_enc_pub(data.get('id'), json.dumps(m))
-    #TODO   Bases is cleared when a system goes down. Hence, when it reboots and sends a ping, the others won't reply with their information.
-    #       we need to have the others send a reply.
-    #       This could lead to cycle of send_replies. May need a new state that updates but does not reply
-    db(REPLY_PING)
+    log("\t\tAfter")
+    log("\t\t\tbases: %s" % repr(bases))
+    send_message(data.get('id'), json.dumps(m))
+    #TODO   Bases is cleared when a system goes down. Hence, when it reboots
+    #       and sends a ping, the others won't reply with their information. we
+    #       need to have the others send a reply. This could lead to cycle of
+    #       send_replies. May need a new state that updates but does not reply
 
 def update_map(data):
+    """ Responds to a ping reply, by adding the provided information into
+        memory """
     global bases
     print_info(data)
-    print "\t\tBefore"
-    print "\t\t\tbases: %s" % repr(bases)
+    log("\t\tBefore")
+    log("\t\t\tbases: %s" % repr(bases))
     if bases.get(data.get('id')) == None:
         # add to the base with out route 1 and in route 2
         bases[data.get('id')] = {
@@ -474,16 +521,26 @@ def update_map(data):
     # reset
     if bases.get(data.get('id')).get('check') != None:
         bases[data.get('id')]['check'] = 2
-    db(UPDATE)
-    print "\t\tAfter"
-    print "\t\t\tbases: %s" % repr(bases)
+    log("\t\tAfter")
+    log("\t\t\tbases: %s" % repr(bases))
 
 def send_global_ping():
-    m = {'code': PROPOGATE, 'og':dev_id, 'id': dev_id, "data":{}, "q": [], "t": []}
-    db(GLOBAL_PING)
-    broadcast_enc_pub(glob_id, json.dumps(m))
+    """ Broadcasts a message with empty data fields where other bases will
+        add data to """
+    m = {
+            "code": PROPOGATE,
+            "og": dev_id,
+            "id": dev_id,
+            "data":{},
+            "q": [],
+            "t": []
+        }
+    send_message(glob_id, json.dumps(m))
 
 def send_propogate(data):
+    """ Replies to a global ping and request to propagate by adding peroson
+        communication and location information to the data and bases for the
+        ping to be propagated to """
     print_info(data)
     ID = data.get('id')
     d = data.get('data')    # data
@@ -494,29 +551,51 @@ def send_propogate(data):
         if key not in q and key not in t and data.get(key) == None:
             q.append(key)
     if d.get(dev_id) == None:
-        d[dev_id] = {"lat": dev_coor.get('lat'), "lng": dev_coor.get('lng'), "alt": dev_coor.get('alt'), "links":bases.keys()}
+        d[dev_id] = {
+                "lat": dev_coor.get('lat'),
+                "lng": dev_coor.get('lng'),
+                "alt": dev_coor.get('alt'),
+                "links":bases.keys()
+                }
 
     if dev_id == data.get('og'):
-        d[dev_id] = {"lat": dev_coor.get('lat'), "lng": dev_coor.get('lng'), "alt": dev_coor.get('alt'), "links":bases.keys()}
+        d[dev_id] = {
+                "lat": dev_coor.get('lat'),
+                "lng": dev_coor.get('lng'),
+                "alt": dev_coor.get('alt'),
+                "links":bases.keys()
+                }
         data = []
         for key in d:
             d.get(key)["base"] = key
             data.append(d.get(key))
-        #TODO Needs to check if 1. New data's bases exists in existing map. If so, the value need to be updated with the new ones. 
+        #TODO   Needs to check if 1. New data's bases exists in existing map.
+        #       If so, the value need to be updated with the new ones.
         if os.path.isfile('map.pub'):
            with open('map.pub') as fn:
             existing_map = json.load(fn)
             for m in existing_map:
                 if m not in data:
                     data.append(m)
- 
+
         with open('map.pub', 'w') as fn:
             fn.write(json.dumps(data))
         return
 
-    m = {'code': PROPOGATE, 'og':data.get('og'), 'id': dev_id, "data":d, "q": q, "t":t}
-    #TODO Pending more tests, this closed out programs
+    m = {
+            "code": PROPOGATE,
+            "og": data.get('og'),
+            "id": dev_id,
+            "data":d,
+            "q": q,
+            "t":t
+        }
+    #TODO   Handle situation when the base that should receive the message i
+    #       either does not exist or did not receive the message
     if len(t) != 0:
+        # trace empty
+        # queue is empty
+        #   go back in trace
         if len(q) == 0:
             # if queue is empty, go back in trace
             i = t.pop()
@@ -532,34 +611,33 @@ def send_propogate(data):
             m['q'] = q[1:]
             m['t'] = t
             recipient = q[0]
+    else:
+        recipient = data.get('og')
 
-    db(PROPOGATE)
     #TODO Could fail, may need glob_id instead of recipient
-    #broadcast_enc_pub(recipient, json.dumps(m))
-    broadcast_enc_pub(glob_id, json.dumps(m))
+    send_message(recipient, json.dumps(m))
+    #send_message(glob_id, json.dumps(m))
 
 def start_take_off(data):
+    """ Sends drone an altitude to take off too """
     print_info(data)
-    if data.get('base') == None:
-        #TODO Send Abort, the base the drone asked for exist
-        return
     m = {
             'code': TAKE_OFF,
             'lat': bases.get(data.get('base')).get('lat'),
-            "lng": bases.get(data.get('base')).get('lat'),
+            "lng": bases.get(data.get('base')).get('lng'),
             "alt": dev_coor.get('alt') + (bases[data.get('base')].get('out') * base_alt),
             'id': dev_id
         }
     #TODO add drone to internal memory
     #TODO could benefit from send_direct code for horizontal laning
-    db(START_TAKE_OFF)
-    broadcast_enc_pub(data.get('id'), json.dumps(m))
+    send_message(data.get('id'), json.dumps(m))
 
 def send_flight_plan(data):
+    """ Sends a flight plan to the provided drone  """
     global drones
     print_info(data)
-    print "\t\tBefore"
-    print "\t\t\tdrones: %s" % repr(drones)
+    log("\t\tBefore")
+    log("\t\t\tdrones: %s" % repr(drones))
     m = {
             'code': CONFIRM_FP,
             'flight_plan': data.get('flight_plan'),
@@ -568,22 +646,25 @@ def send_flight_plan(data):
             'id': dev_id
         }
     drones[data.get('drone')] = {"addr": binascii.unhexlify(data.get('addr'))}
-    db(SEND_FP)
-    print "\t\tAfter"
-    print "\t\t\tdrones: %s" % repr(drones)
-    broadcast_enc_pub(data.get('drone'), json.dumps(m))
+    log("\t\tAfter")
+    log("\t\t\tdrones: %s" % repr(drones))
+    send_message(data.get('drone'), json.dumps(m))
 
+#NOTE This two may be unneeded seeing that a drone can't reply mid flight
 def request_status():
+    """ Sends a request to the drone to provide location mid flight """
     global request
     for drone in drones:
         m = {
             'code': REPLY_STATUS,
             'id': dev_id
             }
-        broadcast_enc_pub(drone, json.dumps(m))
+        send_message(drone, json.dumps(m))
     request = False
 
 def check_status(data):
+    """ Given provided latitude and longitude of a drone, will resend directions
+        if the drone has not taken off """
     print_info(data)
     coor1 = (dev_coor.get('lat'), dev_coor.get('lng'))
     coor2 = (data.get('lat'), data.get('lng'))
@@ -594,6 +675,12 @@ def check_status(data):
 #
 #   Start Script
 #
+send_dummy_directions("1")
+print
+send_dummy_directions("2")
+print
+send_dummy_directions("3")
+exit()
 
 # Get ID Name
 try:
@@ -609,9 +696,9 @@ try:
 except:
     exit("global.pub was not found")
 
-print "/*** Starting Base"
-print "\tdev_id  \t%s" % dev_id
-print "\tglob_id \t%s" % glob_id
+log("/*** Starting Base")
+log("\tdev_id  \t%s" % dev_id)
+log("\tglob_id \t%s" % glob_id)
 
 # Find GPS
 if disableGPS or find_device(GPS):
@@ -621,9 +708,9 @@ else:
     exit("GPS not found")
 
 if GPS.get('session') == None:
-    print '\tGPS not found'
+    exit('GPS not found')
 else:
-    print "\tGPS found at %s" % GPS.get('port')
+    log("\tGPS found at %s" % GPS.get('port'))
 
 # Find XBEE
 if find_device(XBEE):
@@ -633,25 +720,26 @@ else:
     exit("XBEE not Found")
 
 if XBEE.get('session') == None:
-    print '\tXBEE not found'
+
+    exit('\tXBEE not found')
 else:
-    print "\tXBEE found at %s" % XBEE.get('port')
-    print "\t\taddr: %s" % repr(XBEE.get('addr'))
+    log("\tXBEE found at %s" % XBEE.get('port'))
+    log("\t\taddr: %s" % repr(XBEE.get('addr')))
 
 # Send Xbee info to Central base
 m = {"addr":XBEE.get('addr'), "dev":dev_id}
 sp.call(["curl", "-f", "-s", "10.0.1.72:5000/xbee_info", "-X", "POST", "-d", json.dumps(m)], shell=False)
 
 dev_coor = get_coordinates()
-print "\tStarting Position"
-print "\t\tlatitude:  %f" % dev_coor.get('lat')
-print "\t\tlongitude: %f" % dev_coor.get('lng')
-print "\t\taltitude:  %f" % dev_coor.get('alt')
+log("\tStarting Position")
+log("\t\tlatitude:  %f" % dev_coor.get('lat'))
+log("\t\tlongitude: %f" % dev_coor.get('lng'))
+log("\t\taltitude:  %f" % dev_coor.get('alt'))
 
 
-print "\tStarting triggers"
+log("\tStarting triggers")
 # Start Triggers
-#TODO Turn back one
+#TODO Turn back on
 #trigger_request()
 trigger_ping()
 
@@ -662,7 +750,7 @@ timer = 0
 print "\n/*** Starting Machine"
 try:
     while run:
-        data = get_state_from_enc_pub()
+        data = get_next_state()
         code = data.get('code')
         debug = data.get('debug', False)
 
