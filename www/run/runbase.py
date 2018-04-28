@@ -131,7 +131,7 @@ def get_coordinates():
     """ Return a dictionary with latitude, longitude, and altitude obtained
         from the GPS  """
     data = {'lat': 40.7357, 'lng': -74.1724, 'alt':3} # Dummy Data
-    if not disabledGPS and GPS.get('session') != None:
+    if not disableGPS and GPS.get('session') != None:
         while True:
             time.sleep(1)
             report = GPS['session'].next()
@@ -273,13 +273,13 @@ def send_dummy_directions(path):
         waymarks.append(get_new_coor(origin, left, d))
         dist = get_distance(waymarks[0], target)
         third = dist / 3.0
-        remainder = dist - third
+        remainder = dist - third - 0.002
         waymarks.append(get_new_coor(waymarks[0], brng, third))
         waymarks.append(get_new_coor(waymarks[1], brng, remainder))
     elif path == "2":
         dist = get_distance(origin, target)
         third = dist / 3.0
-        remainder = dist - third
+        remainder = dist - third - 0.002
         waymarks.append(get_new_coor(origin, brng, third))
         waymarks.append(get_new_coor(waymarks[0],brng, remainder))
     else:
@@ -287,10 +287,10 @@ def send_dummy_directions(path):
         waymarks.append(get_new_coor(origin, right, d))
         dist = get_distance(waymarks[0], target)
         third = dist / 3.0
-        remainder = dist - third
+        remainder = dist - third - 0.002
         waymarks.append(get_new_coor(waymarks[0], brng, third))
         waymarks.append(get_new_coor(waymarks[1], brng, remainder))
-    
+
     print "/*** trace"
     for point in waymarks:
         print "%s, %s" % (repr(point.get('lat')), repr(point.get('lng')))
@@ -307,8 +307,6 @@ def send_directions(data):
     log("\t\t\tbases: %s" % repr(bases))
     b = bases.get(data.get('base'))
     if b == None:
-        #TODO Handle Situation when base provided is not in recognized
-        #   by the base
         m = {'code': ABORT, "id": dev_id}
     else:
         # Find open path
@@ -321,25 +319,26 @@ def send_directions(data):
             #       Consider having the drone hover in place or land and wait
             #       until a path frees up
             exit("All Paths are taken")
-        waymarks = []
         # Generate Path
         b["paths"][p] = data.get('id')
         origin = {"lat":dev_coor.get('lat'), "lng":dev_coor.get('lng')}
         target = {"lat":b.get('lat'), "lng":b.get('lng')}
+        waymarks = [target]
         brng = get_bearing(origin, target)
-        d = 0.006
+        d = 0.006 # distance left/right of base
+        offset = 0.002 # distance before reaching base
         if path == "1":
             left = (brng - 90) % 360
             waymarks.append(get_new_coor(origin, left, d))
             dist = get_distance(waymarks[0], target)
             third = dist / 3.0
-            remainder = dist - third
+            remainder = dist - third - offset
             waymarks.append(get_new_coor(waymarks[0], brng, third))
             waymarks.append(get_new_coor(waymarks[1], brng, remainder))
         elif path == "2":
             dist = get_distance(origin, target)
             third = dist / 3.0
-            remainder = dist - third
+            remainder = dist - third - offset
             waymarks.append(get_new_coor(origin, brng, third))
             waymarks.append(get_new_coor(waymarks[0],brng, remainder))
         else:
@@ -347,7 +346,7 @@ def send_directions(data):
             waymarks.append(get_new_coor(origin, right, d))
             dist = get_distance(waymarks[0], target)
             third = dist / 3.0
-            remainder = dist - third
+            remainder = dist - third - offset
             waymarks.append(get_new_coor(waymarks[0], brng, third))
             waymarks.append(get_new_coor(waymarks[1], brng, remainder))
         # Send info
@@ -355,11 +354,9 @@ def send_directions(data):
                 'code': DIRECT,
                 'waymarks': waymarks,
                 'id': dev_id,
-                'lng': b.get('lng'), #FIXME: get rid of old way
-                'lat': b.get('lat'), #FIXME: get rid of old way
                 'alt': dev_coor.get('alt') + (bases.get('out') * base_alt)
             }
-    
+
     print "/*** trace"
     for points in waymarks:
         print "%s, %s" % (repr(point.get('lat')), repr(point.get('lng')))
@@ -417,8 +414,8 @@ def send_release_acceptance(data):
     log("\t\t\tdrones: %s" % repr(drones))
     m = {'code': MOVE}
     if data.get('msg') != msgs.get(data.get('id')):
-        #TODO Force the drone to abort or request the release again
-        m['msg'] = 'FAILED'
+        #NOTE Base should have the drone reattempt the release process
+        m['code'] = ABORT
     for p in bases[data.get('base')].get('paths'):
         if bases[data.get('base')].get('paths').get(p) == data.get('id'):
             bases[data.get('base')]['paths'][p] = None
@@ -533,9 +530,13 @@ def send_global_ping():
             "id": dev_id,
             "data":{},
             "q": [],
-            "t": []
+            "t": [dev_id]
         }
-    send_message(glob_id, json.dumps(m))
+    #NOTE Assumes Central Base does not join two seperate networks
+    if len(bases) > 0:
+        for key in bases:
+            send_message(key, json.dumps(m))
+            break
 
 def send_propogate(data):
     """ Replies to a global ping and request to propagate by adding peroson
@@ -548,7 +549,7 @@ def send_propogate(data):
     t = data.get('t')       # trace of path taken
     for key in bases.keys():
         # add based to queue only if does not exist in queue, trace, and data
-        if key not in q and key not in t and data.get(key) == None:
+        if key not in q and key not in t and d.get(key) == None:
             q.append(key)
     if d.get(dev_id) == None:
         d[dev_id] = {
@@ -569,15 +570,8 @@ def send_propogate(data):
         for key in d:
             d.get(key)["base"] = key
             data.append(d.get(key))
-        #TODO   Needs to check if 1. New data's bases exists in existing map.
-        #       If so, the value need to be updated with the new ones.
         if os.path.isfile('map.pub'):
-           with open('map.pub') as fn:
-            existing_map = json.load(fn)
-            for m in existing_map:
-                if m not in data:
-                    data.append(m)
-
+            os.remove("map.pub")
         with open('map.pub', 'w') as fn:
             fn.write(json.dumps(data))
         return
@@ -590,46 +584,33 @@ def send_propogate(data):
             "q": q,
             "t":t
         }
-    #TODO   Handle situation when the base that should receive the message i
-    #       either does not exist or did not receive the message
-    if len(t) != 0:
-        # trace empty
-        # queue is empty
-        #   go back in trace
-        if len(q) == 0:
-            # if queue is empty, go back in trace
-            i = t.pop()
-            m['t'] = t
-            recipient = i
-        elif bases.get(q[0]) == None:
-            # if queue item 1 exists in bases, go back in trace
-            i = t.pop()
-            m['t'] = t
-            recipient = i
-        else:
+
+    if len(q) > 0:
+        if bases.get(q[0]) != None:
             t.append(dev_id)
             m['q'] = q[1:]
             m['t'] = t
             recipient = q[0]
-    else:
-        recipient = data.get('og')
-
-    #TODO Could fail, may need glob_id instead of recipient
+            send_message(recipient, json.dumps(m))
+            return
+    recipient = t.pop()
+    m['t'] = t
     send_message(recipient, json.dumps(m))
     #send_message(glob_id, json.dumps(m))
 
 def start_take_off(data):
     """ Sends drone an altitude to take off too """
     print_info(data)
+    base = bases.get(data.get('base'))
     m = {
             'code': TAKE_OFF,
-            'lat': bases.get(data.get('base')).get('lat'),
-            "lng": bases.get(data.get('base')).get('lng'),
-            "alt": dev_coor.get('alt') + (bases[data.get('base')].get('out') * base_alt),
+            'lat': base.get('lat'),
+            "lng": base.get('lng'),
+            "alt": dev_coor.get('alt') + (bases.get('out') * base_alt),
             'id': dev_id
         }
-    #TODO add drone to internal memory
-    #TODO could benefit from send_direct code for horizontal laning
+    if data.get('id') not in drones:
+        drones[data.get('id')] = {"addr": binascii.unhexlify(data.get('addr'))}
     send_message(data.get('id'), json.dumps(m))
 
 def send_flight_plan(data):
@@ -675,12 +656,6 @@ def check_status(data):
 #
 #   Start Script
 #
-send_dummy_directions("1")
-print
-send_dummy_directions("2")
-print
-send_dummy_directions("3")
-exit()
 
 # Get ID Name
 try:
@@ -728,7 +703,7 @@ else:
 
 # Send Xbee info to Central base
 m = {"addr":XBEE.get('addr'), "dev":dev_id}
-sp.call(["curl", "-f", "-s", "10.0.1.72:5000/xbee_info", "-X", "POST", "-d", json.dumps(m)], shell=False)
+sp.Popen(["curl", "-f", "-s", "10.0.1.72:5000/xbee_info", "-X", "POST", "-d", json.dumps(m)], shell=False)
 
 dev_coor = get_coordinates()
 log("\tStarting Position")

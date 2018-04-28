@@ -15,7 +15,8 @@ class MessageBuilder():
     #Returns true if the last message added completed the expected number of
     #received messages. Otherwise, returns false
     def addMessage(self, msg):
-        self.msgs.append(msg)
+        if msg not in self.msgs:
+            self.msgs.append(msg)
         return len(self.msgs) == self.num
 
 class Delivery():
@@ -136,7 +137,7 @@ class Delivery():
             #NOTE Failurer here. exception is thrown and (None, None) is thrown even though message was properly decrypted
             try:
                 i = dec_msg[0] #Message Identifier
-                m = int(dec_msg[2]) #Number of partial messages for completed message
+                m = int(dec_msg[2], 16) #Number of partial messages for completed message
                 #Means that this is the first message received with this identifier.
                 #Make a new MessageBuilder
                 print "\t\t\t++> source: %s" % source

@@ -297,10 +297,12 @@ def abort(data):
     print_info(data)
     #Clear the current flight plan
     if fly:
+        #NOTE   Currently, drone flies back to take off position.
+        #       Ideally, we have the drone retrace its steps, instead of
+        #       flying home
         cmds = PIXHAWK['session'].commands
         cmds.clr()
         cmds.upload()
-
         trgt = target['waymarks'][0]
         cmd = Command(0,0,0, mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
         0, 0, 0, 0, 0, 0,
