@@ -113,10 +113,8 @@ def register():
   os.system("cp ../source/testxbee.py %s" % (devicePath))
   if deviceType == 'Base':
     os.system("cp ../source/runbase.py %s" % (devicePath))
-    os.system("cp ../source/testbase.py %s" % (devicePath))
   else:
     os.system("cp ../source/rundrone.py %s" % (devicePath))
-    os.system("cp ../source/testdrone.py %s" % (devicePath))
 
   # try to send code to pi via scp
   # sshpass -p thesis123 scp -r ../devices/Base/{deviceName} pi%10.0.1.128:/home/pi
