@@ -58,7 +58,7 @@ request         = False
 ping            = False
 base_alt        = 1
 dev_coor        = None
-disableGPS      = False
+disableGPS      = True
 debug           = True
 
 # GPS Device Information

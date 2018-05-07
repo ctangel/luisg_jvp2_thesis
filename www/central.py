@@ -110,7 +110,6 @@ def register():
   os.system("cp ../source/decrypt.c %s" % (devicePath))
   os.system("cp ../source/compile.py %s" % (devicePath))
   os.system("cp ../source/Comms.py %s" % (devicePath))
-  os.system("cp ../source/testxbee.py %s" % (devicePath))
   if deviceType == 'Base':
     os.system("cp ../source/runbase.py %s" % (devicePath))
   else:

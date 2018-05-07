@@ -1,5 +1,4 @@
 [
-  {"lat": 40.3508, "lng": -74.651798, "base": "base1", "alt": 14.8, "links": ["base2", "central"]},
-  {"lat": 40.350111, "lng": -74.65219, "base": "base2", "alt": 19.0, "links": ["base1", "central"]},
-  {"lat": 40.349539, "lng": -74.652651, "base": "central", "alt": 16.6, "links": ["base1"]}
+  {"lat": 40.350111, "lng": -74.65219, "base": "ardupilot2", "alt": 19.0, "links": ["central"]},
+  {"lat": 40.349539, "lng": -74.652651, "base": "central", "alt": 16.6, "links": ["ardupilot2"]}
 ]

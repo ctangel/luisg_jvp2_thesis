@@ -67,7 +67,6 @@ bases           = {}
 drones          = {}
 PREV_STATE      = IDLE
 run             = True
-debug           = False
 dev_id          = None
 glob_id         = None
 target          = {"lat":None, "lng":None, "alt":None}
@@ -123,12 +122,12 @@ def find_device(device):
         true, else false. """
     ports = serial.tools.list_ports.comports()
     for port in ports:
-        dev_vid = int(device.get('vid').get(i), 16)
-        dev_pid = int(device.get('pid').get(i), 16)
-      for i in range(len(device['vid'])):
-          if port.vid == dev_vid and port.pid == dev_pid:
-              device['port'] = port.device
-              return True
+       for i in range(len(device['vid'])):
+            dev_vid = int(device.get('vid')[i], 16)
+            dev_pid = int(device.get('pid')[i], 16)
+            if port.vid == dev_vid and port.pid == dev_pid:
+                device['port'] = port.device
+                return True
     return False
 
 def startPIXHAWK(device):
@@ -254,7 +253,7 @@ def direct(data):
         cmds.upload()
         vehicle.mode = VehicleMode("GUIDED")
         waypoint = target.get('waymarks')[-2]
-        target = LocationGlobal(waypoint.get('lat'), waypoint.get('lng')))
+        target = LocationGlobal(waypoint.get('lat'), waypoint.get('lng'))
         distanceTo(target)
     print "\t\tAfter"
     print "\t\t\ttarget: %s" % repr(target)
@@ -273,13 +272,13 @@ def move_to_base(data):
     global target
     print_info(data)
     vehicle = PIXHAWK['session']
-    cmds = vehicle.commands
-    #cmds.clear()
-    #cmds.upload()
-
-    # Upload the final waypoint
-    trgt = target["waymarks"][-1]
     if fly:
+        cmds = vehicle.commands
+        #cmds.clear()
+        #cmds.upload()
+
+        # Upload the final waypoint
+        trgt = target["waymarks"][-1]
         cmd = Command(0,0,0, mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
         0, 0, 0, 0, 0, 0,
         trgt.get('lat'), trgt.get('lng'), target['alt'])
@@ -406,12 +405,13 @@ try:
         glob_id = fn.read()
 except:
     exit("global.pub was not found")
-# Find XBEE
-if find_device(PIXHAWK):
-    if not startPIXHAWK(PIXHAWK):
-        exit("PIXHAWK Failed to Connect")
-else:
-    exit("PIXHAWK not Found")
+# Find PIXHAWK
+if fly:
+    if find_device(PIXHAWK):
+        if not startPIXHAWK(PIXHAWK):
+            exit("PIXHAWK Failed to Connect")
+    else:
+        exit("PIXHAWK not Found")
 
 
 # Find XBEE
@@ -438,7 +438,6 @@ try:
     while run:
         data  = get_next_state()
         code  = data.get('code')
-        debug = data.get('debug', False)
 
         if len(flight_plan) == 0 and not code == CONFIRM_FP:
             code = IDLE
@@ -459,7 +458,7 @@ try:
         elif code == CONFIRM:
             print "CONFIRM"
             PREV_STATE = IDLE
-            ask_for_confirmation(flight_plan[flight_stop-1])
+            ask_for_confirmation(flight_plan[flight_stop])
         elif code == ASK_DIRECT:
             print "ASK_DIRECT"
             PREV_STATE = IDLE
@@ -481,6 +480,7 @@ try:
         elif code == RELEASE_ACC:
             print "RELEASE_ACC"
             PREV_STATE = IDLE
+            flight_stop += 1
             if len(flight_plan) <= flight_stop:
                 PREV_STATE = LAND
             else:
@@ -489,7 +489,6 @@ try:
             print "MOVE"
             PREV_STATE = IDLE
             move_to_base(data)
-            flight_stop += 1
             PREV_STATE = RELEASE
         elif code == ABORT:
             print "ABORT"
