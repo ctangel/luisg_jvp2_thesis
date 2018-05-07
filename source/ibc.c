@@ -1,7 +1,7 @@
 /* ibc.c
  *
  * Implementation of Identity Based Cryptography as defined by Boneh and
- * Franklin. 
+ * Franklin.
  *
  * Author: Luis Gonzalez-Yante
  *
@@ -18,7 +18,7 @@
 
 /* * * Helper Functions * * */
 
-/*  Converts an string ID, such as a MAC address, into hash and computes a
+/*  Converts an string ID, such as a MAC address, into a hash and computes a
  *  related point on an Elliptical Curve. Stores this piont in Qid
  * */
 void id_to_hash(unsigned char* id, element_t Qid) {
@@ -42,7 +42,7 @@ int get_block_size(const unsigned char* m) {
 }
 
 /*  Copies string "to" up to the NULL character or nth characters into the
- *  string "from". if NULL is hit before the nth character, all characters
+ *  string "from". If NULL is hit before the nth character, all characters
  *  between NULL and nth will be filled with a NULL character
  */
 void cpy(unsigned char* to, unsigned char* from, int n) {
@@ -91,7 +91,7 @@ void extract(unsigned char* id, pairing_t* pairing, element_t* s, element_t* sQi
 
 /* Encrypts message m so that only user with the ID id can decrypt.
  */
-void encrypt(const unsigned char* m, element_t* public_key, pairing_t* pairing, 
+void encrypt(const unsigned char* m, element_t* public_key, pairing_t* pairing,
     unsigned char* id, unsigned char* output) {
   element_t Qid, user_public_key;
   element_init_G1(Qid, *pairing);
@@ -110,7 +110,7 @@ void encrypt(const unsigned char* m, element_t* public_key, pairing_t* pairing,
   for (int i = 0; i < blocks; i++) {
     unsigned char from_message[17];
     unsigned char from_encryptor[17];
-    cpy(from_message, (unsigned char*)m+(i*16), 16); 
+    cpy(from_message, (unsigned char*)m+(i*16), 16);
     from_message[16] = '\0';
     AES_encrypt(from_message, from_encryptor, &enc_key);
     from_encryptor[16] = '\0';
@@ -120,7 +120,7 @@ void encrypt(const unsigned char* m, element_t* public_key, pairing_t* pairing,
 
 /*  Decrypts message enc using the private user key
  */
-void decrypt(unsigned char* enc, unsigned long size, element_t* r, 
+void decrypt(unsigned char* enc, unsigned long size, element_t* r,
     element_t* P, element_t* sQid, pairing_t* pairing, unsigned char* output) {
   element_t rP, shaHashDec;
   element_init_G1(rP, *pairing);
@@ -132,12 +132,12 @@ void decrypt(unsigned char* enc, unsigned long size, element_t* r,
   unsigned char temp4[ele_length1];
   element_to_bytes(temp4, shaHashDec);
   SHA1(temp4, ele_length1, hashDec);
-  AES_set_decrypt_key(hashDec, 128, &dec_key); 
+  AES_set_decrypt_key(hashDec, 128, &dec_key);
   int blocks = size / 16;
   for (int i = 0; i < blocks; i++) {
     unsigned char from_enc[17];
     unsigned char from_decryptor[17];
-    cpyall(from_enc, enc+(i*16), 16); 
+    cpyall(from_enc, enc+(i*16), 16);
     from_enc[16] = '\0';
     AES_decrypt(from_enc, from_decryptor, &dec_key);
     from_decryptor[16] = '\0';

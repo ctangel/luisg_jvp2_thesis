@@ -130,7 +130,7 @@ def master_reset():
   os.system("./../exec/setup < ../system/param/a3.param")
 
   # generate global key
-  gkey = os.urandom(4).encode('hex')
+  gkey = os.urandom(32).encode('hex')
   os.system("./../exec/extract " + gkey + " < ../system/param/a3.param")
   os.system("mv ../www/*.pub ../system")
   os.system("mv ../system/id.pub ../system/global.pub")
@@ -222,5 +222,5 @@ if __name__ == "__main__":
     #        running = True
     #if not running:
     #  sp.Popen("cd run && python runbase.py", shell=True)
- 
+
     application.run(host='0.0.0.0', threaded=True)

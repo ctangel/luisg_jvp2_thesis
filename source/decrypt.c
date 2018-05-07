@@ -42,8 +42,8 @@ int main(int argc, char* argv[]) {
   // Read in Paring Information
   FILE *fp;
   int c;
-  
-  int len = strlen(argv[2]); 
+
+  int len = strlen(argv[2]);
   size_t final_len = len / 2;
   unsigned char* enc = (unsigned char*)malloc((final_len+1) * sizeof(*enc));
   for (size_t i=0, j=0; j<final_len; i+=2, j++)
@@ -55,7 +55,7 @@ int main(int argc, char* argv[]) {
   while (fgets(str, MAX_LENGTH,fp) != NULL) {
     strcpy(id, str);
   }
-  fclose(fp); 
+  fclose(fp);
   fp = fopen("global.pub", "r");
   while (fgets(str, MAX_LENGTH,fp) != NULL) {
     strcpy(gid, str);
@@ -64,11 +64,6 @@ int main(int argc, char* argv[]) {
  fp = fopen("p.pub", "r");
   while (fgets(str, MAX_LENGTH,fp) != NULL) {
     int h = element_set_str(P, (const char*) str, 10);
-  }
-  fclose(fp);
-  fp = fopen("ppub.pub", "r");
-  while (fgets(str, MAX_LENGTH,fp) != NULL) {
-    int h = element_set_str(Ppub, (const char*) str, 10);
   }
   fclose(fp);
   fp = fopen("sqid.pub", "r");
@@ -81,18 +76,18 @@ int main(int argc, char* argv[]) {
     int h = element_set_str(gQid, (const char*) str, 10);
   }
   fclose(fp);
-  
+
   // Decryption of messages
   unsigned char output[final_len];
   if (strcmp(argv[1], id) == 0) {
     decrypt((unsigned char*)enc, final_len, &r, &P, &sQid, &pairing, output);
-   
+
   } else if (strcmp(argv[1], gid) == 0) {
     decrypt((unsigned char*)enc, final_len, &r, &P, &gQid, &pairing, output);
   } else {
     printf("Incorrect ID Prodvided");
     exit(EXIT_FAILURE);
-  } 
+  }
 
   printf("%s", (const char*)output);
 

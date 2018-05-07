@@ -61,7 +61,7 @@ int main(int argc, char* argv[]) {
     strcpy(gid, str);
   }
   fclose(fp);
- fp = fopen("p.pub", "r");
+  fp = fopen("p.pub", "r");
   while (fgets(str, MAX_LENGTH,fp) != NULL) {
     int h = element_set_str(P, (const char*) str, 10);
   }

@@ -50,11 +50,6 @@ int main(int argc, char *argv[]) {
   unsigned char enc[(get_block_size((const unsigned char*)m) * 16)+1];
   encrypt((const unsigned char*)m, &Ppub, &pairing, (unsigned char*)target, enc);
 
-  // Write Encrypted Message to File
-  FILE * fpp;
-  fpp = fopen("enc.pub","wb");
-  fwrite(enc, ((get_block_size((const unsigned char*)m) * 16)+1),1,fpp);
-  fclose(fpp);
 
   for (int i = 0; i < (get_block_size((const unsigned char*)m) *16); i++) {
     printf("%02x",(int)enc[i]);

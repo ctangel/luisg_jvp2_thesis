@@ -58,7 +58,7 @@ request         = False
 ping            = False
 base_alt        = 1
 dev_coor        = None
-disableGPS      = True
+disableGPS      = False
 debug           = True
 
 # GPS Device Information
@@ -253,47 +253,12 @@ def send_connection_confirmation(data):
     print_info(data)
     log("\t\tBefore")
     log("\t\t\tdrone: %s" % repr(drones))
-    m = {'code': ASK_DIRECT, 'id': dev_id, 'data': 'OK'}
+    m = {'code': MOVE, 'id': dev_id, 'data': 'OK'}
     if data.get('id') not in drones:
         drones[data.get('id')] = {"addr": binascii.unhexlify(data.get('addr'))}
     log("\t\tAfter")
     log("\t\t\tdrones: %s" % repr(drones))
     send_message(data.get('id'), json.dumps(m))
-
-def send_dummy_directions(path):
-    global bases
-    waymarks = []
-    # Generate Path
-    target = {"lat": 40.350208333, "lng": -74.651626667}
-    origin = {"lat": 40.350416667, "lng": -74.65173}
-    brng = get_bearing(origin, target)
-    d = 0.006
-    if path == "1":
-        left = (brng - 90) % 360
-        waymarks.append(get_new_coor(origin, left, d))
-        dist = get_distance(waymarks[0], target)
-        third = dist / 3.0
-        remainder = dist - third - 0.002
-        waymarks.append(get_new_coor(waymarks[0], brng, third))
-        waymarks.append(get_new_coor(waymarks[1], brng, remainder))
-    elif path == "2":
-        dist = get_distance(origin, target)
-        third = dist / 3.0
-        remainder = dist - third - 0.002
-        waymarks.append(get_new_coor(origin, brng, third))
-        waymarks.append(get_new_coor(waymarks[0],brng, remainder))
-    else:
-        right = (brng + 90) % 360
-        waymarks.append(get_new_coor(origin, right, d))
-        dist = get_distance(waymarks[0], target)
-        third = dist / 3.0
-        remainder = dist - third - 0.002
-        waymarks.append(get_new_coor(waymarks[0], brng, third))
-        waymarks.append(get_new_coor(waymarks[1], brng, remainder))
-
-    print "/*** trace"
-    for point in waymarks:
-        print "%s, %s" % (repr(point.get('lat')), repr(point.get('lng')))
 
 def send_directions(data):
     """ Replies a drone's request for directions to a provided destination
@@ -323,7 +288,7 @@ def send_directions(data):
         b["paths"][p] = data.get('id')
         origin = {"lat":dev_coor.get('lat'), "lng":dev_coor.get('lng')}
         target = {"lat":b.get('lat'), "lng":b.get('lng')}
-        waymarks = [target]
+        waymarks = [origin]
         brng = get_bearing(origin, target)
         d = 0.006 # distance left/right of base
         offset = 0.002 # distance before reaching base
@@ -354,11 +319,11 @@ def send_directions(data):
                 'code': DIRECT,
                 'waymarks': waymarks,
                 'id': dev_id,
-                'alt': dev_coor.get('alt') + (bases.get('out') * base_alt)
+                'alt': dev_coor.get('alt') + (b.get('out') * base_alt)
             }
 
     print "/*** trace"
-    for points in waymarks:
+    for point in waymarks:
         print "%s, %s" % (repr(point.get('lat')), repr(point.get('lng')))
 
     log("\t\tAfter")
@@ -412,10 +377,12 @@ def send_release_acceptance(data):
     log("\t\tBefore")
     log("\t\t\tbases:  %s" % repr(bases))
     log("\t\t\tdrones: %s" % repr(drones))
-    m = {'code': MOVE}
+    m = {'code': RELEASE_ACC}
     if data.get('msg') != msgs.get(data.get('id')):
         #NOTE Base should have the drone reattempt the release process
         m['code'] = ABORT
+    #NOTE   Unlocking paths is bad here. This should happen after the drone
+    #       reaches its target.
     for p in bases[data.get('base')].get('paths'):
         if bases[data.get('base')].get('paths').get(p) == data.get('id'):
             bases[data.get('base')]['paths'][p] = None
@@ -606,7 +573,7 @@ def start_take_off(data):
             'code': TAKE_OFF,
             'lat': base.get('lat'),
             "lng": base.get('lng'),
-            "alt": dev_coor.get('alt') + (bases.get('out') * base_alt),
+            "alt": dev_coor.get('alt') + (base.get('out') * base_alt),
             'id': dev_id
         }
     if data.get('id') not in drones:
